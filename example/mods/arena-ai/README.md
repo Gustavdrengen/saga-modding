@@ -1,33 +1,36 @@
 # `com.example.arena-ai`
 
-C → WebAssembly mod. Drives the AI opponent (top) paddle with
-two strategies that combine:
+C → WebAssembly mod. Drives the AI opponent (top) paddle with two
+complementary strategies:
 
-- A **lightweight interceptor** that each `tick(dt)` updates
-  `set_ai_x(target)` with a linear-projection of where the ball
-  will meet the AI's line.
-- A **heavyweight lookahead worker** that does a longer
-  trajectory scan. The worker is registered into the unified
-  function table and dispatched via `saga_thread_spawn(worker,
-  arg_ptr)` from the main `tick`. It writes its refined target
-  into the same slot, which the engine's next frame reads.
+- A **lightweight interceptor** invoked every frame: the
+  orchestrator's `saga_start` loop pushes the latest ball state to
+  `com_example_arena_ai_tick(bx, by, bvx, bvy, dt)`, which predicts
+  where the ball will meet the AI line and smooth-slides `g_ai_x`
+  toward that intercept.
+- A **heavyweight worker** registered into the unified function table;
+  a real Saga launcher dispatches it via `saga_thread_spawn(worker,
+  arg_ptr)`. The worker demonstrates `saga_thread_yield` cooperation.
 
-The mod demonstrates the entire saga:host interface:
+The mod uses two host-import namespaces:
 
-- §4.1 `saga:assets` — `saga_asset_open / get_size / close` for
-  fetching the AI personality JSON the worker consults.
-- §4.2 `saga:thread` — `saga_thread_spawn` to fork the lookahead
-  worker, and `saga_thread_yield` from inside the worker for
-  cooperative preemption.
+- `saga:thread` — `saga_thread_spawn` / `saga_thread_yield` for the
+  worker dispatch and cooperative preemption.
+- `saga:log` — `saga_log(level, msg_ptr, msg_len)` writes a
+  human-readable line into the engine log during the registration
+  phase so a real launcher's diagnostic panel shows the mod coming
+  online.
 
-| Export                            | Owner    | Read by                          |
-| --------------------------------- | -------- | -------------------------------- |
-| `tick(dt)`                        | this mod | engine frame loop                |
-| `worker(arg_ptr)`                 | this mod | saga:thread dispatcher in real Saga |
-| `get_ai_x()`                      | this mod | arena-renderer (JS)              |
+| Export                                | Owner    | Read by                          |
+| ------------------------------------- | -------- | -------------------------------- |
+| `com_example_arena_ai_register`       | this mod | Saga launcher once at boot       |
+| `com_example_arena_ai_tick`           | this mod | `arena-renderer` (orchestrator)  |
+| `com_example_arena_ai_get_ai_x`       | this mod | `arena-renderer` (orchestrator)  |
+| `com_example_arena_ai_reset_ai`       | this mod | `arena-renderer` (orchestrator)  |
+| `worker`                              | this mod | `saga:thread` dispatcher         |
 
-The mod depends on `arena-physics` for the ball-state getters it
-needs. The dep-first entrypoint invocation order means
-`arena-physics.phys_init` runs before this mod's
-`arena_ai_init` — so by the time `tick` first fires, physics
-has already registered its getters into the merged WASM exports.
+No peer mod's exports are statically linked into this crate; the
+orchestrator reads physics state via merged exports and ships it as
+plain arguments to `tick`. That makes the build pipeline
+self-contained — a per-mod `clang --target=wasm32-unknown-unknown`
+does not need any cross-mod object files at all.

@@ -1,0 +1,18 @@
+target/
+# Cargo.lock from the rust_bindings library — cdylib mods commit theirs.
+rust_bindings/Cargo.lock
+
+# Scratch + artifact dirs owned by example/build.sh; the script wipes
+# these on every exit and they are never committed.
+example/build/
+example/dist/
+
+# Editor, IDE, and OS noise.
+.vscode/
+.idea/
+**/*.rs.bk
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db

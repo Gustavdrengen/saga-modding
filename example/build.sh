@@ -10,22 +10,50 @@
 #       module.js              (copied verbatim for JS mods)
 #       assets/...             (copied verbatim for data mods)
 #
-# Cargo's intermediate `target/` lives at ./build/<mod-name>/ so the
-# source mod directory under ./mods/ stays clean.
-#
-# This script does NOT run a Saga engine. It only produces the per-mod
-# artifacts the Saga Launcher would consume. See ./README.md and the
-# top-level MOD_SPEC.md for context.
+# Build contract:
+#   1. The ONLY file outputs are under dist/<mod-name>/.
+#      Anything else left behind on disk is a bug.
+#   2. Intermediate Cargo target dirs live under build/<mod-name>/
+#      and are wiped on every exit (success, error, or signal) so
+#      they never accumulate between invocations.
+#   3. This script does NOT run a Saga engine. It only produces
+#      the per-mod artifacts the Saga Launcher would consume.
+#      See ./README.md and the top-level MOD_SPEC.md for context.
 
 set -euo pipefail
 
+# Resolve paths up front so every later reference is non-empty and
+# absolute. Bail with a clear error if ROOT can't be derived.
 cd "$(dirname "$0")"
-ROOT="${ROOT:-$(pwd)}"
+ROOT="$(pwd -P)"
 MODS_DIR="$ROOT/mods"
 DIST_DIR="$ROOT/dist"
 SCRATCH_DIR="$ROOT/build"
 
-# Colorful log helper.
+[ -n "$SCRATCH_DIR" ] && [ "${SCRATCH_DIR#/}" != "$SCRATCH_DIR" ] \
+  || { echo "SCRATCH_DIR '$SCRATCH_DIR' must be an absolute path" >&2; exit 2; }
+[ -n "$DIST_DIR" ]    && [ "${DIST_DIR#/}"    != "$DIST_DIR"    ] \
+  || { echo "DIST_DIR '$DIST_DIR' must be an absolute path"    >&2; exit 2; }
+[ -n "$MODS_DIR" ]    && [ "${MODS_DIR#/}"    != "$MODS_DIR"    ] \
+  || { echo "MODS_DIR '$MODS_DIR' must be an absolute path"    >&2; exit 2; }
+
+# Trap is installed BEFORE any destructive op so even a failing
+# `mkdir -p` or `rm -rf` participates in cleanup. EXIT alone fires on
+# natural exits; INT/TERM cover interactive Ctrl-C and graceful kill.
+cleanup_scratch() {
+  if [ -n "${SCRATCH_DIR:-}" ] \
+      && [ "${SCRATCH_DIR#/}" != "$SCRATCH_DIR" ] \
+      && [ -d "$SCRATCH_DIR" ]; then
+    rm -rf "$SCRATCH_DIR"
+  fi
+}
+trap cleanup_scratch EXIT INT TERM
+
+# Always start from a clean tree so any leftovers from a previous run
+# (manual `cargo` invocations, dropped debug artifacts) are swept.
+rm -rf "$DIST_DIR" "$SCRATCH_DIR"
+mkdir -p "$DIST_DIR"
+
 if [ -t 1 ]; then
   BOLD=$'\033[1m'; CYAN=$'\033[1;36m'; RESET=$'\033[0m'
 else
@@ -34,9 +62,6 @@ fi
 log() { echo "${CYAN}==>${RESET} ${BOLD}$*${RESET}"; }
 warn() { echo "${CYAN}==>${RESET} $*" >&2; }
 
-# ---------------------------------------------------------------------------
-# Toolchain sanity.
-# ---------------------------------------------------------------------------
 have() { command -v "$1" >/dev/null 2>&1; }
 
 HAS_RUST=0
@@ -64,18 +89,12 @@ if [ "$HAS_RUST" = "1" ]; then
   fi
 fi
 
-# ---------------------------------------------------------------------------
-# Per-mod build pass.
-# ---------------------------------------------------------------------------
 shopt -s nullglob
 
 if [ ! -d "$MODS_DIR" ]; then
   warn "$MODS_DIR does not exist"
   exit 1
 fi
-
-rm -rf "$DIST_DIR"
-mkdir -p "$DIST_DIR"
 
 for mod_dir in "$MODS_DIR"/*/; do
   name="$(basename "$mod_dir")"
@@ -86,8 +105,6 @@ for mod_dir in "$MODS_DIR"/*/; do
     continue
   fi
 
-  # Always replicate the static parts of the mod into dist/<name>/. Even
-  # if compilation fails, the launcher-relevant metadata still ships.
   mod_dist="$DIST_DIR/$name"
   mkdir -p "$mod_dist"
   cp "$manifest" "$mod_dist/manifest.toml"
@@ -113,7 +130,6 @@ for mod_dir in "$MODS_DIR"/*/; do
     fi
     cp "$built" "$mod_dist/module.wasm"
     log "    → $mod_dist/module.wasm"
-    # Replicate any assets/ that the Rust mod also publishes (rare but allowed).
     if [ -d "$mod_dir/assets" ]; then
       cp -r "$mod_dir/assets" "$mod_dist/assets"
     fi
@@ -129,18 +145,15 @@ for mod_dir in "$MODS_DIR"/*/; do
     fi
     log "build $name (c → wasm)"
 
-    # Pull the entrypoint out of the manifest (defaults to `<name>_init`).
     ep="$(grep -oE 'entrypoint[[:space:]]*=[[:space:]]*"[^"]+"' "$manifest" \
           | sed -E 's/.*"([^"]+)".*/\1/' | head -n1)"
     if [ -z "${ep:-}" ]; then
-      ep="${name//-/_}_init"
+      ep="${name//-/_}_register"
     fi
 
-    # Per MOD_SPEC §8.5 mods communicate via the merged
-    # `Saga.wasmExports`; cross-mod `extern` declarations are *forbidden*
-    # at source level. `-Wl,--allow-undefined` is still passed defensively
-    # so any leftover extern becomes a real WASM import rather than a
-    # toolchain error.
+    # Cross-mod `extern` declarations are not allowed; pass
+    # `--allow-undefined` defensively so a leftover extern shows up
+    # as a real WASM import rather than a toolchain error.
     case "$name" in
       arena-ai)
         export_flags=(
@@ -149,6 +162,16 @@ for mod_dir in "$MODS_DIR"/*/; do
           "-Wl,--export=com_example_arena_ai_get_ai_x"
           "-Wl,--export=com_example_arena_ai_reset_ai"
           "-Wl,--export=worker"
+        )
+        ;;
+      arena-physics)
+        export_flags=(
+          "-Wl,--export=${ep}"
+          "-Wl,--export=com_example_arena_physics_tick"
+          "-Wl,--export=com_example_arena_physics_serve"
+          "-Wl,--export=com_example_arena_physics_set_input_dx"
+          "-Wl,--export=com_example_arena_physics_set_ai_x"
+          "-Wl,--export=com_example_arena_physics_set_state"
         )
         ;;
       *)

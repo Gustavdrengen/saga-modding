@@ -7,11 +7,10 @@ edition = "2021"
 path = "src/lib.rs"
 crate-type = ["cdylib"]
 
-# Pure `no_std` — no `alloc::*`, no global allocator needed.
-# The `saga-stdlib` crate is NOT pulled in here because:
-#   1. arena-physics never reads assets or spawns threads in this example,
-#   2. pulling `saga-stdlib` would force `feature = "alloc_handler"`,
-#      which in turn requires `#[feature(alloc_error_handler)]` (unstable).
+# Host imports (`saga:log`, `saga:time`) used by the registration
+# entrypoint are declared inline in src/lib.rs as `extern "C"` blocks,
+# so arena-physics has no third-party Rust dependencies and stays
+# free of any global-allocator requirement.
 
 [profile.release]
 opt-level = "s"

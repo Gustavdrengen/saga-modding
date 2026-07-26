@@ -1,18 +1,14 @@
 # Saga Platform Mod Specification
 
-**Platform Name:** Saga / Saga Launcher
-
-**Document Status:** Standard Draft
-
 ---
 
 ## 1. Overview & Architecture
 
 The **Saga Platform** uses a modular, multi-target execution model. A **Mod** (short for both _Module_ and _Modification_) is the fundamental unit of code, assets, and content extension within Saga.
 
-Mods are designed to run in a web-native environment (WASM + JavaScript). Rather than treating JavaScript purely as glue code for WebAssembly, Saga treats **JavaScript modules (`module.js`) and WebAssembly modules (`module.wasm`) as peer execution units**.
+Mods run in a web-native environment (WASM + JavaScript). Rather than treating JavaScript purely as glue code for WebAssembly, Saga treats **JavaScript modules (`module.js`) and WebAssembly modules (`module.wasm`) as peer execution units**.
 
-At runtime, the Saga Engine dynamically merges all active `.wasm` files using Binaryen into a single, optimized WebAssembly instance while aggregating all corresponding `.js` code modules into a single execution environment sharing a unified memory space and symbol table.
+At runtime, the Saga Engine dynamically merges all active `.wasm` files into a single, optimized WebAssembly instance while aggregating all corresponding `.js` code modules into a single execution environment sharing a unified linear memory space and symbol table.
 
 ---
 
@@ -30,13 +26,13 @@ A Mod ID uniquely identifies a mod across the entire Saga ecosystem.
 - `io.github.developer.lighting-pack`
 - `net.saga.official.base-game`
 
-> **Note:** The Mod ID and the Mod's published version are **not** present in the local `manifest.toml`. Mod IDs and release versions are publishing/distribution concerns managed by the Saga Launcher registry.
+> **Note:** Mod IDs and release versions are managed by the Saga Launcher registry during distribution and publishing.
 
 ---
 
 ## 3. Directory Layout & File Contracts
 
-A valid Saga mod directory must conform to the following file layout:
+A valid Saga mod directory must conform to the following layout:
 
 ```text
 my-saga-mod/
@@ -44,7 +40,7 @@ my-saga-mod/
 ├── module.wasm           [OPTIONAL] Compiled WebAssembly binary
 ├── module.js             [OPTIONAL] Companion JavaScript module
 ├── README.md             [OPTIONAL] Human-readable documentation
-├── src/                  [OPTIONAL] Source code (Rust, C, etc.) – built to module.wasm
+├── src/                  [OPTIONAL] Source code (Rust, C, etc.)
 └── assets/               [OPTIONAL] Arbitrary assets (textures, audio, data)
     ├── textures/
     └── audio/
@@ -60,159 +56,104 @@ The manifest specifies human-readable metadata and dependency declarations requi
 name = "My Custom Rendering Mod"
 description = "Adds real-time particle rendering and custom shader pipelines."
 
-# Optional: name of the export (WASM symbol) or named JS export that the
-# launcher calls once on boot. See §6.
-entrypoint = "my_mod_init"
+# Optional: unique WASM symbol or named JS export called during Phase 1 (Registration).
+entrypoint = "com_company_mod_register"
 
 # Dependencies mapping required Mod IDs to semantic-version constraints
 [dependencies]
 "com.saga.official.core" = "^1.0.0"
 "org.community.math-utils" = ">=2.1.0"
 
-# Optional: build hints consumed by external build tools (see §3.1.1).
-[build]
-type     = "rust"           # "rust" | "c" | "js" | "assets"
-output   = "module.wasm"    # canonical output filename, default depends on `type`
-command  = "cargo build --target wasm32-unknown-unknown --release"
-
 ```
 
 #### Fields Schema
 
-| Field          | Type     | Required | Description                                                     |
-| -------------- | -------- | -------- | --------------------------------------------------------------- |
-| `name`         | `string` | **Yes**  | Human-readable display name.                                    |
-| `description`  | `string` | **Yes**  | Detailed description of the mod's function.                     |
-| `dependencies` | `table`  | No       | Map of Mod ID keys (`string`) to SemVer rule values (`string`). |
-| `entrypoint`   | `string` | No       | Bare symbol name of a function to call on boot (see §6).        |
-| `build`        | `table`  | No       | Build-tool hints (see §3.1.1).                                  |
+| Field          | Type     | Required | Description                                                            |
+| -------------- | -------- | -------- | ---------------------------------------------------------------------- |
+| `name`         | `string` | **Yes**  | Human-readable display name.                                           |
+| `description`  | `string` | **Yes**  | Detailed description of the mod's function.                            |
+| `dependencies` | `table`  | No       | Map of Mod ID keys (`string`) to SemVer rule values (`string`).        |
+| `entrypoint`   | `string` | No       | Unique symbol name of a registration function called on boot (see §6). |
 
-#### 3.1.1 `[build]` table
-
-The `[build]` table is purely informational for the Saga Launcher; the
-launcher itself does not compile mods. External build tools (such as the
-`build.sh` shipped with the repo's `example/` directory) read these
-fields to decide how to turn `src/` into `module.wasm`/`module.js`.
-
-| Sub-field  | Type     | Required | Description                                                                 |
-| ---------- | -------- | -------- | --------------------------------------------------------------------------- |
-| `type`     | `string` | No       | Discriminator: `"rust"`, `"c"`, `"js"`, or `"assets"`. Defaults by detection. |
-| `output`   | `string` | No       | Filename of the produced artifact. Defaults to `module.wasm` (Rust/C) or `module.js` (JS). |
-| `command`  | `string` | No       | Free-form hint of the command used to build. Documentation only.            |
+---
 
 ### 3.2 Code Modules (`module.wasm` and `module.js`)
 
-Both code files are optional individually, but a functional mod will typically contain at least one.
+#### `module.wasm` Specification & Relocation Rules
 
-#### `module.wasm` Specification
+- **Target:** `wasm32-unknown-unknown` (or dynamic linking side-module targets).
+- **Shared Memory & Table:** Must import shared linear memory (`env.memory`) and indirect function table (`env.__indirect_function_table`).
+- **Symbol Uniqueness:** Because Binaryen merges all `.wasm` binaries into a single global symbol table, exported functions **must not** use generic names like `mod_init`. Symbols must be explicitly unique (e.g., RDN-prefixed: `com_company_mod_register`) or mapped via `manifest.toml`.
+- **Memory & Table Relocation:** To prevent linear memory corruption during binary synthesis:
 
-- **Target:** `wasm32-unknown-unknown` (or similar bare-metal WASM target).
-- **Imports:** Must import shared linear memory (`env.memory`) and indirect function table (`env.__indirect_function_table`).
-- **Host imports:** Must import the standard namespaces `saga:assets` and `saga:thread` (see §4) for any asset / threading functionality. Imports use the `extern "C"` ABI and each function name is significant inside the namespace.
-- **Export Naming:** Symbols exported by WASM should be uniquely prefixed using the C ABI (e.g., `extern "C" fn com_company_mod_init()`) to prevent Binaryen symbol collision during runtime merging.
+1. Compilers must output relocatable modules that import runtime base offsets (`env.__memory_base` and `env.__table_base`), **OR**
+2. The Saga Launcher synthesis pass uses Binaryen AST relocation passes to re-base static data segment offsets and function pointers into disjoint memory blocks prior to instantiation.
 
-#### `module.js` Specification
+#### `module.js` Specification & Security Scope
 
-`module.js` must be a valid ES Module exporting two primary constructs:
+`module.js` runs directly within the standard browser execution environment alongside the Saga host engine. Standard browser context security applies.
 
-1. `imports`: An object containing functions exposed to the unified WASM environment.
-2. An entrypoint — see §6 for the canonical declaration and the precedence rules. New mods should declare the entrypoint in `manifest.toml` (`entrypoint = "..."`); for backwards compatibility, an `init(wasmExports, memory, table)` default export on `module.js` will be invoked *only* if the manifest does not declare an entrypoint.
+`module.js` must be an ES Module exporting:
+
+1. `imports`: An object containing host functions exposed to the unified WASM environment.
+2. An optional registration entrypoint matching `manifest.toml`.
 
 ```javascript
 // Example module.js
 export const imports = {
-  // Saga standard host function extension or peer API
   com_company_mod_custom_log: (ptr, len) => {
-    // Read string from shared memory
+    // Read string from shared WASM linear memory
   },
 };
 
-// Either an `init(wasmExports, memory, table)` fallback (when the
-// manifest does not declare an `entrypoint`):
-export function init(exports, memory, table) {
-  // Save global WASM export references
-  console.log("Mod com.company.mod initialized!");
+// Unique registration function exported to match manifest.toml
+export function com_company_mod_register(exports, memory, table) {
+  console.log("Mod registered!");
 }
 ```
 
-> **Rust authors:** the safe `fetch_buffer`, `spawn_thread`, etc. wrappers live in the
-> `saga-stdlib` crate shipped at `rust_bindings/` in this repository. Always
-> prefer those over raw `extern "C"` blocks — they handle sentinel-checking,
-> arity, and ownership for you. See `example/mods/hello-rust/src/lib.rs` for a
-> complete worked example.
+---
 
-#### 3.3 `assets/` Directory
-
-Contains arbitrary files (models, textures, audio files, JSON data). The directory structure inside `assets/` is left entirely to the discretion of the mod author.
+### 3.3 `assets/` Directory
 
 Assets are accessed across mods using the Saga Asset Protocol (URI syntax):
 `saga://<mod-id>/<path-to-asset>`
 
-- **Example (Internal):** `saga://self/textures/grass.png` (resolves to the current mod's assets).
-- **Example (Cross-Mod):** `saga://com.saga.official.core/audio/click.wav`.
-
-A mod that ships only data may have nothing but `assets/` (plus a
-`manifest.toml`). To make those bytes visible to the runtime, the mod
-must either include a tiny `module.js` that registers the bytes with the
-host on boot, or rely on the Saga Launcher's auto-discovery of the
-`assets/` directory.
+- **Internal:** `saga://self/textures/grass.png` (resolves to current mod).
+- **Cross-Mod:** `saga://com.saga.official.core/audio/click.wav`.
 
 ---
 
 ## 4. Pre-defined System Imports (Saga Standard Library)
 
-Saga provides host-level system bindings under standardized module import namespaces. All WASM and JS modules can import these natively.
+Saga provides host-level bindings under standardized `saga:*` namespaces.
 
 ### 4.1 Asset Management (`saga:assets`)
 
-Provides low-level and high-level mechanisms to load assets asynchronously from linear memory or JS.
-
-#### WASM C-ABI Interface
-
 ```rust
 extern "C" {
-    /// Requests an asset buffer from Saga Launcher storage.
-    ///
-    /// - uri_ptr / uri_len: Pointer and length of the 'saga://...' string.
-    /// - handle_out: Returns an integer asset handle (> 0 if success, <= 0 on error).
+    /// Requests an asset buffer handle from storage.
     fn saga_asset_open(uri_ptr: *const u8, uri_len: usize) -> i32;
 
-    /// Queries the byte length of an opened asset handle.
+    /// Queries byte length of an asset handle.
     fn saga_asset_get_size(handle: i32) -> usize;
 
-    /// Reads asset data into a WASM linear memory pointer.
+    /// Reads asset bytes into linear memory.
     fn saga_asset_read(handle: i32, dest_ptr: *mut u8, length: usize) -> i32;
 
-    /// Closes an asset handle freeing its host resources.
+    /// Closes an asset handle.
     fn saga_asset_close(handle: i32);
 }
 
 ```
 
-#### JS Interface
+---
 
-```javascript
-import { Saga } from "saga:engine";
-
-// Asynchronously fetch raw ArrayBuffer or Blob from any mod
-const audioData = await Saga.assets.fetchBuffer(
-  "saga://org.community.audio/effects/boom.mp3",
-);
-```
-
-### 4.2 Multithreading & Worker Spawning (`saga:thread`)
-
-Saga supports multithreading via Web Workers sharing `SharedArrayBuffer` memory and the WebAssembly Table.
-
-#### WASM C-ABI Interface
+### 4.2 Multithreading (`saga:thread`)
 
 ```rust
 extern "C" {
-    /// Spawns a Web Worker to execute a WASM function via function pointer index.
-    ///
-    /// - entry_idx: Table index of the function pointer to run on the worker.
-    /// - arg_ptr: Pointer to memory containing arguments for the worker task.
-    /// - returns: Thread ID (>0) or error code (<0).
+    /// Spawns a Web Worker executing a WASM table function pointer index.
     fn saga_thread_spawn(entry_idx: usize, arg_ptr: usize) -> i32;
 
     /// Yields execution on the current thread.
@@ -221,294 +162,178 @@ extern "C" {
 
 ```
 
-#### Thread Execution Flow
+---
 
-1. WASM calls `saga_thread_spawn(entry_idx, arg_ptr)`.
-2. Saga Launcher Runtime intercepts the call, spawns a `Worker`, and sends the compiled `WebAssembly.Module`, `SharedArrayBuffer` memory, and `WebAssembly.Table`.
-3. The Worker calls `wasm_worker_entry(entry_idx, arg_ptr)` on the WASM instance.
+### 4.3 Structured Logging (`saga:log`)
+
+Provides structured, engine-tagged logging output separated by level.
+
+```rust
+extern "C" {
+    /// Writes a log message to the host engine log.
+    ///
+    /// - level: 0 = Trace, 1 = Debug, 2 = Info, 3 = Warn, 4 = Error
+    fn saga_log(level: u32, msg_ptr: *const u8, msg_len: usize);
+}
+
+```
+
+---
+
+### 4.4 Engine Clock & Time (`saga:time`)
+
+Provides high-precision time and frame delta data.
+
+```rust
+extern "C" {
+    /// Returns time elapsed since the last frame (in seconds).
+    fn saga_time_delta() -> f32;
+
+    /// Returns total engine execution time since boot (in seconds).
+    fn saga_time_elapsed() -> f64;
+
+    /// Returns total fixed engine ticks executed.
+    fn saga_time_ticks() -> u64;
+}
+
+```
+
+---
+
+### 4.5 Save File System (`saga:storage`)
+
+`saga:storage` exposes a complete save file subsystem allowing mods to inspect, read, write, and delete save files and metadata records.
+
+```rust
+extern "C" {
+    /// Writes a JSON-formatted list of all available save files and metadata
+    /// into `out_buf`. Returns actual byte length written (or negative error code).
+    fn saga_save_list(out_buf: *mut u8, max_len: usize) -> i32;
+
+    /// Reads metadata JSON for a specific save identifier.
+    fn saga_save_read_meta(
+        save_id_ptr: *const u8, save_id_len: usize,
+        meta_buf: *mut u8, max_len: usize
+    ) -> i32;
+
+    /// Reads binary/text save payload into linear memory.
+    fn saga_save_read(
+        save_id_ptr: *const u8, save_id_len: usize,
+        dest_ptr: *mut u8, max_len: usize
+    ) -> i32;
+
+    /// Writes/overwrites a save payload and its metadata record.
+    fn saga_save_write(
+        save_id_ptr: *const u8, save_id_len: usize,
+        data_ptr: *const u8, data_len: usize,
+        meta_ptr: *const u8, meta_len: usize
+    ) -> i32;
+
+    /// Deletes a save file entry.
+    fn saga_save_delete(save_id_ptr: *const u8, save_id_len: usize) -> i32;
+}
+
+```
 
 ---
 
 ## 5. Runtime Resolution & Loading Pipeline
 
-When Saga Launcher launches an instance containing multiple mods, it executes the following load pipeline:
+When Saga launches an instance, it executes the following load pipeline:
 
 ```text
-       [ Manifest Resolution & Topological Dependency Sort ]
-                                 │
-                                 ▼
-       ┌─────────────────────────┴─────────────────────────┐
-       │                                                   │
-       ▼                                                   ▼
-[ Binaryen Assembly Pass ]                     [ JS Module Pass ]
-Read all `module.wasm` files                   Import all `module.js` files
-Merge AST into unified WASM Module             Aggregate `imports` objects
-                                 │                         │
-                                 └────────────┬────────────┘
-                                              │
-                                              ▼
-                                 [ Single WASM Instance ]
-                                 Instantiate via WebAssembly
-                                              │
-                                              ▼
-                                 [ Post-Init Wiring ]
-                                 Invoke entrypoints in dep order (see §6)
+   [ 1. Manifest Resolution & Dependency Graph Sort ]
+                           │
+                           ▼
+   [ 2. Binaryen Synthesis & Static Relocation Pass ]
+   Merges `.wasm` modules; rebases data/table segments
+                           │
+                           ▼
+   [ 3. WebAssembly Instantiation ]
+   Allocates SharedArrayBuffer & instantiates unified module
+                           │
+                           ▼
+   [ 4. Phase 1: Registration Pass (`entrypoint`) ]
+   Executes mod registration symbols in dependency-first order
+                           │
+                           ▼
+   [ 5. Phase 2: Engine Launch Pass (`saga_start`) ]
+   Launcher invokes root base game launch entrypoint
 
 ```
 
-1. **Manifest Validation:** Reads all `manifest.toml` files, resolves dependency trees, and builds an execution graph.
-2. **Binaryen Synthesis:** Reads all `module.wasm` binaries, merges them into a single `WebAssembly.Module` using Binaryen's AST merger, and links shared atomic memory.
-3. **JS Aggregation:** Dynamically imports all `module.js` files, merging their `imports` objects into a single global `importObject`.
-4. **Unified Instantiation:** Instantiates the merged WASM binary with the unified `importObject`, shared `SharedArrayBuffer`, and shared `WebAssembly.Table`.
-5. **Boot / Entrypoint Pass:** Iterates every mod's `manifest.toml`. If the mod declares an `entrypoint` (see §6), the launcher invokes it with the unified `wasmExports`, the unified `memory`, and the unified `indirect function table` (`table`). If a JS-only mod has no `entrypoint` but does have a default `init(wasmExports, memory, table)` export, that is used instead.
+1. **Manifest Validation:** Reads `manifest.toml` files, resolves dependency trees, and establishes execution order.
+2. **Binaryen Synthesis & Relocation:** Combines all `.wasm` modules into a single `WebAssembly.Module`. Static data segment offsets (`__memory_base`) and indirect call indices (`__table_base`) are assigned non-overlapping memory regions.
+3. **JS Aggregation & Instantiation:** Merges JS `imports` objects and instantiates the merged WASM binary with unified `SharedArrayBuffer` memory and `WebAssembly.Table`.
+4. **Phase 1 (Registration Pass):** Invokes mod entrypoints declared in `manifest.toml` in dependency-first order to register content and function table hooks.
+5. **Phase 2 (Engine Launch Pass):** Invokes `saga_start()` on the base game to initiate the active game loop.
 
 ---
 
-## 6. Entrypoints
+## 6. Two-Phase Lifecycle & Entrypoint Contracts
 
-A mod MAY declare an entrypoint in its `manifest.toml`:
+To prevent a base game or complex mod from blocking dependent mods during boot (e.g., entering a continuous loop during initialization), Saga enforces a **Two-Phase Boot Architecture**.
 
-```toml
-entrypoint = "mod_init"
-```
-
-The value is the **bare symbol name** of an export.
-
-| Mod source type | How the entrypoint is declared                                                                                       |
-| --------------- | -------------------------------------------------------------------------------------------------------------------- |
-| Rust `src/`     | `#[no_mangle] pub extern "C" fn mod_init() -> i32 { … }`                                                            |
-| C `src/`        | The function marked `__attribute__((export_name("mod_init")))` and linked with `-Wl,--export=mod_init`              |
-| `module.js`     | A named ES export: `export function mod_init() { … }`                                                               |
-
-A mod without an `entrypoint` field MAY still expose an `init(wasmExports, memory, table)`
-default export from `module.js`; the launcher will then call that
-fallback. The two conventions exist for historical reasons; new mods
-should prefer the explicit `entrypoint` declaration in the manifest.
-
-### 6.1 Execution Order
-
-When multiple active mods declare entrypoints, the Saga Launcher calls
-them in **dependency-first order**: a mod's entrypoint is called *before*
-the entrypoints of any mod it depends on. The phrase "upper levels first,
-then their dependencies, and so on" captures this – the entry points of
-mods at the top of the dependency graph (those with fewest in-deps) run
-first, and the chain proceeds down the dep tree:
+```text
+                                 BOOT LIFECYCLE
+                                        │
+    ┌───────────────────────────────────┴───────────────────────────────────┐
+    │                                                                       │
+    ▼                                                                       ▼
+[ Phase 1: Registration ]                                  [ Phase 2: Engine Launch ]
+• Executed for ALL mods in dependency-first order          • Executed ONCE on root base game
+• MUST be non-blocking (setup, function table hooks)       • Starts `requestAnimationFrame` / workers
+• Function symbol specified in `manifest.toml`             • Standardized symbol name: `saga_start`
 
 ```
-   app   ───────► runs first
-    │
-    ├─► lib-a ──► runs after `app`
-    │
-    └─► lib-b ──► runs after `app`
-         │
-         └─► lib-c ──► runs after `lib-b`
+
+---
+
+### 6.1 Phase 1: Registration Pass (`entrypoint`)
+
+- **Execution Order:** Dependency-first topological order (Base Game $\rightarrow$ Core Libraries $\rightarrow$ High-level Mods). A dependency's entrypoint is called **before** any mod that relies on it.
+- **Non-Blocking Rule:** Every `entrypoint` function must perform memory allocations, register callback function pointers into shared tables, hook game functions, and return immediately (`0`). **It must not enter a blocking game loop.**
+- **Symbol Naming:** The entrypoint symbol name is defined in `manifest.toml` (`entrypoint = "com_example_register"`). To avoid Binaryen merge collisions, entrypoint function names must be unique across all active mods.
+
+#### C-ABI Entrypoint Contract
+
+```rust
+// Exported C-ABI function matching `entrypoint` in manifest.toml
+#[no_mangle]
+pub extern "C" fn com_company_mod_register(
+    wasm_exports: *const c_void,
+    memory_handle: *const c_void,
+    table_handle: *const c_void
+) -> i32;
+
 ```
 
-Mods without an `entrypoint` and without an `init()` default export are
-**skipped** during the boot pass – they participate in the runtime only
-through their exports.
+- **Parameters:**
+- `wasmExports`: Reference to the global export table.
+- `memory`: Pointer handle to the unified linear memory.
+- `table`: Pointer handle to the shared indirect function table.
 
-### 6.2 Entrypoint Contract
+- **Return Code:** `0` indicates success; non-zero indicates registration failure.
 
-Each entrypoint is called exactly once on boot with the arguments:
+---
 
-- `wasmExports`: the merged export object of all WASM mods.
-- `memory`: an `ArrayBuffer`-shaped handle to the unified linear memory.
-- `table`: the unified indirect-call function table.
+### 6.2 Phase 2: Engine Launch Pass (`saga_start`)
 
-Entrypoints MAY register asset URIs, hook host imports, schedule async
-work, or spawn worker threads. They MUST NOT block indefinitely; the
-launcher is expected to return control to the engine promptly.
+Once the Saga Launcher confirms that **every active mod's registration entrypoint has returned `0**`, Phase 2 begins.
 
-The entrypoint's return value is interpreted as an `i32` status code. By
-convention, `0` indicates "nothing to do", non-zero indicates success.
-Errors are expected to be logged through the host's logging surface, not
-raised as exceptions.
+- **Single Execution:** The launcher calls `saga_start()` **only once** on the primary base game module (`net.saga.official.base-game` or equivalent root engine).
+- **Execution Contract:** `saga_start` initiates the primary game execution loop using non-blocking browser mechanics (e.g., `requestAnimationFrame` callbacks or worker event ticks).
+- **Symbol Contract:**
+
+```rust
+// Standardized single entrypoint symbol exported by the base game engine
+#[no_mangle]
+pub extern "C" fn saga_start() -> i32;
+
+```
 
 ---
 
 ## 7. License
 
-This specification is dual-licensed under MIT or Apache-2.0, at your
-option. The `saga-stdlib` reference implementation under
-`../rust_bindings/` uses the same license.
-
----
-
-## 8. Frame Loop, Per-Mod `tick`, and the `Saga` Page-Side Surface
-
-The §3.2 lifecycle hooks (*entrypoint*, `init`) describe **boot-time**
-behaviour. Many mods also need to do work **every frame** (game
-physics, AI ticks, canvas redraws, input polling). This section
-documents the convention the Saga Launcher uses to drive that
-work, and the page-side `Saga.*` surface that hosts provide to
-source-language modules.
-
-### 8.1 Per-frame `tick` exports
-
-Every mod MAY export a per-frame function:
-
-```toml
-# (no manifest entry needed — the convention is the contract)
-```
-
-| Mod source type | How the `tick` function is declared                                            |
-| --------------- | ----------------------------------------------------------------------------- |
-| Rust `src/`     | `#[unsafe(no_mangle)] pub extern "C" fn tick(dt: f32) { ... }`                |
-| C `src/`        | `int tick(float dt) { ... }` exported via `-Wl,--export=tick`                 |
-| `module.js`     | `export function tick(dt) { ... }`                                             |
-
-The Saga Launcher calls each mod's `tick` **once per animation
-frame**, in **dependency order** (the same dep-first order as
-§6.1's entrypoint invocation). The argument `dt` is the wall-clock
-time elapsed since the previous frame, in seconds (clamped to a
-sane maximum by the launcher so a tab-switch doesn't cause
-timesteps-of-doom).
-
-A mod that has boot-time work but no per-frame work (e.g. the
-asset-bundle mod in `example/`) DOES NOT need to export `tick`.
-A mod that only does per-frame work (e.g. a renderer) MAY set
-its manifest `entrypoint` field to a no-op function and rely on
-its `tick` export for everything else.
-
-### 8.2 The page-side `Saga.*` surface
-
-For pure-JavaScript mods (`module.js` writers), the launcher
-publishes a global `Saga` object on `globalThis` BEFORE the
-first entrypoint is invoked. The surface has at least the
-following namespaces; future versions may add more.
-
-```javascript
-globalThis.Saga = {
-  host: {
-    log(...args): void   // route to the host-side logger / dev console
-  },
-  runtime: {
-    registerTick(fn: (dt: number) => void): void  // §8.1 alternative: explicit per-frame hook
-    fireEachFrame(dt: number): void              // the mod that owns the RAF loop calls this once per frame
-  },
-  canvas: HTMLCanvasElement | null,    // the page canvas, when the launcher is the canvas-bearer
-  ctx:    CanvasRenderingContext2D | null,
-  hud:    HTMLElement | null,          // <div> overlay, for overlay-style renderers
-  memory: { buffer: ArrayBuffer, f32: Float32Array, u32: Uint32Array, u8: Uint8Array },
-  table:  { get(idx): Function, add(fn): number, size(): number },
-  wasmExports: { [name: string]: Function | WebAssembly.Global },  // merged exports of all WASM mods
-  assets: {
-    register(uri: string, bytes: Uint8Array): void,  // publish bytes under a saga:// URI
-    fetchBuffer(uri: string): Promise<Uint8Array>,
-  },
-  thread: {
-    spawn(entryIdx: number, argPtr: number): number,  // returns thread id
-    yield(): void,                                    // saga_thread_yield equivalent
-  },
-};
-```
-
-Mods that wish to drive the frame themselves (rather than rely
-on the launcher to call `tick`) can opt out of §8.1 by skipping
-the `tick` export and instead doing, in `module.js`:
-
-```javascript
-export function init() {
-  Saga.runtime.registerTick(myTickFn);   // the launcher collates them
-}
-
-function myTickFn(dt) { ... }
-```
-
-### 8.3 Cross-module communication
-
-Within a single merged WASM instance (the spec's §5 load
-pipeline), modules see each other's exports via standard
-extern-function calls. A Rust mod that declares a getter:
-
-```rust
-#[unsafe(no_mangle)] pub extern "C" fn get_ball_x() -> f32 { BALL_X }
-```
-
-is callable from a C mod that imports it:
-
-```c
-extern float get_ball_x(void);   /* resolves against merged exports */
-```
-
-and from a JS mod via `Saga.wasmExports.get_ball_x()`. No
-linear-memory offset arithmetic is needed by the caller.
-
-> **Note:** the bare-extern / merged-exports pattern above is the
-> "fits-in-one-link" form. The standalone per-mod build pipeline
-> (`example/build.sh`) described in §8.5 does NOT support it, because
-> each mod compiles to its own `module.wasm` and cannot resolve
-> peer-mod symbols at static-link time. Engines that merge via a
-> monolithic Binaryen pass can take either path; standalone builds
-> MUST use the orchestrator pattern (§8.5).
-
-### 8.4 Asset-registration timing
-
-A "data-only" mod (`assets/` directory and a one-line `init`
-that calls `Saga.assets.register(...)`) runs its entrypoint in
-the same dep-first order as everything else. A mod whose
-boot-time work needs to *fetch* an asset declared by such a
-mod SHOULD either:
-
-* declare a dependency on the data mod and **lazy-load the
-  asset on its first `tick`**, tolerating "asset not registered"
-  failure on early frames, OR
-* elide the dependency and just hard-code defaults.
-
-This avoids the chicken-and-egg "physics depends on assets, but
-physics's entrypoint must run before assets' entrypoint" pattern
-that motivated §6.1's dep-first order.
-
-### 8.5 Cross-mod communication and the *no static linking* rule
-
-Mods are compiled in **isolation**: every `module.wasm` under
-`example/mods/<name>/module.wasm` is built by `example/build.sh`
-without any peer-mod symbols in scope. **Mods MUST NOT introduce
-`extern` declarations for another mod's exports** — the resulting
-`module.wasm` would not link, and even if it did the static linker
-can't resolve cross-`module.wasm` references anyway.
-
-The Saga Engine communicates across mods at **runtime** through
-two surfaces:
-
-1. **The merged `Saga.wasmExports` table** (visible from JS).
-   After the engine merges every active mod's `.wasm` into a
-   single composite WASM module (per §5), every export becomes
-   visible at a stable name — namely the mod-id-prefixed form
-   `<mod-id-with-dots-as-underscores>_<export-name>`. Example:
-   `com.example.arena-physics.get_ball_x` → JS object key
-   `com_example_arena_physics_get_ball_x`.
-2. **`Saga.runtime.invokeFn(targetModId, fnName, ...args)`** —
-   page-side dispatcher for wasm-to-wasm calls. The engine
-   maintains the unified indirect-call function table and this
-   dispatcher routes through it.
-
-Because of #1 and #2, **one canonical pattern** is enough for
-the example game (and for any Saga deployment): the mod that
-owns the `requestAnimationFrame` loop (typically a renderer) is
-the **orchestrator**. Each frame it:
-
-1. Reads upstream mod state via `Saga.wasmExports.<prefix>_*()`,
-2. Calls downstream mod functions explicitly:
-   `Saga.wasmExports.<prefix>_tick(args, dt)`,
-3. Pipes the response back into physics via
-   `Saga.wasmExports.<prefix>_set_<x>(value)`, then
-4. Paints.
-
-The C mod does NOT `extern float com_example_arena_physics_get_ball_x(void);`
-— instead its `arena-ai.tick(bx, by, bvx, bvy, dt)` takes the
-ball state as arguments, and `arena-renderer` calls it with the
-values it just read from physics. This eliminates the static
-linker problem at the cost of an extra JS-level function call.
-
-The convention enforced by `example/build.sh` is therefore:
-
-* C mods: pass `-Wl,--allow-undefined` defensively so a stray
-  cross-mod `extern` left over from a refactor doesn't surface as
-  a toolchain error. Standalone `module.wasm` is still valid —
-  the symbol becomes a real WASM import that the engine's
-  merger wires up to the right export at instantiation time.
-* Rust mods: export each cross-mod boundary as a `#[unsafe(no_mangle)]`
-  `pub extern "C" fn`, prefixed with the mod id.
-* JS mods: read via `Saga.wasmExports[<long-name>]()`.
+This specification is dual-licensed under MIT or Apache-2.0.

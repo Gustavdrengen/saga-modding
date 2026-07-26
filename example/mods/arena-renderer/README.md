@@ -1,26 +1,27 @@
 # `com.example.arena-renderer`
 
-Pure-JS mod. Renders ball + paddles + score onto
-`Saga.canvas` and captures keyboard input. Because it owns the
-DOM, it also **owns the requestAnimationFrame loop** – it's the
-mod that calls `Saga.runtime.fireEachFrame(dt)` once per RAF
-tick to drive every other mod's per-frame `tick(dt)` export.
+Pure-JS mod. Doubles as a renderer and as the example's pragmatic
+"`saga_start` base game": the launcher invokes this mod twice —
+once during the Phase 1 registration pass, once during the Phase 2
+launch pass.
 
-The renderer's `tick(dt)` is *also* registered – it paints the
-canvas after the physics + AI `tick`s have updated state in
-shared memory / unified WASM exports.
+| Export name                                       | Phase | Caller                |
+| ------------------------------------------------- | ----- | --------------------- |
+| `com_example_arena_renderer_register`             | 1     | Saga launcher once    |
+| `saga_start`                                      | 2     | Saga launcher once    |
 
-| Export                                | Owner    | Consumer                              |
-| ------------------------------------- | -------- | ------------------------------------- |
-| `arena_renderer_init` (entrypoint)    | renderer | saga:runtime engine once on boot     |
-| `tick(dt)`                            | renderer | saga:runtime engine once per frame  |
+## What each phase does
 
-## What's in `module.js`
+- **Phase 1 (`register`)**: stash the merged WASM exports the engine
+  passed in, locate a canvas (or create one), install keyboard
+  listeners, kick off an async palette fetch. Return `0` immediately
+  without starting the frame loop.
+- **Phase 2 (`saga_start`)**: boot the `requestAnimationFrame` loop.
+  Each frame: read the live ball state from `arena-physics` via the
+  merged exports, hand those values to `arena-ai` as plain
+  `tick(bx, by, bvx, bvy, dt)` arguments, pipe the AI's predicted
+  paddle position back into physics, advance physics, then paint.
 
-- On init: install key listeners that pipe `←/→/A/D/Space/R/P`
-  into `set_input_dx` and `set_state` exports on the physics
-  mod, and into the renderer's local `state` (paused toggle).
-- On RAF: compute `dt`, call `Saga.runtime.fireEachFrame(dt)`,
-  then update `ctx.fillRect` / `ctx.arc` from the unified
-  exports. Circle for ball, rectangles for the player (green)
-  and AI (purple via the palette fetched from `arena-assets`).
+Because the orchestrator pattern is private to this mod, every peer
+mod's Phase 1 is genuinely non-blocking, regardless of how complex
+the runtime frame pipeline turns out to be.

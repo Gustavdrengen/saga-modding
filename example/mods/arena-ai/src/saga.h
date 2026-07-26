@@ -1,12 +1,13 @@
-/* saga.h — Saga host-import declarations used by `arena-ai/src/main.c`.
+/* arena-ai/src/saga.h — Host-import declarations for the arena-ai mod.
  *
- * Per MOD_SPEC §8.5, this mod does NOT include cross-module `extern`
- * declarations for peer mods' exports. The orchestrator (arena-renderer)
- * reads physics state via the merged `Saga.wasmExports` and feeds the
- * values as plain arguments to this mod's `tick(bx, by, bvx, bvy, dt)`.
+ * This mod does NOT include cross-mod extern declarations for peer
+ * mods' exports. The Phase 1 base game (arena-renderer) reads physics
+ * state via the merged WASM exports and ships those values to this
+ * mod as plain arguments to `com_example_arena_ai_tick(...)`.
  *
- * Only the §4.2 saga:thread host import is bound here so the mod can
- * demonstratively `saga_thread_spawn` a worker body in the §4.2 flow.
+ * Only the relevant host-import declarations live here. The
+ * WASM-import attribute `import_module` binds the symbol to the
+ * matching engine namespace on instantiation.
  */
 
 #pragma once
@@ -18,13 +19,16 @@
   #define SAGA_IMPORT_ATTR(module, name)
 #endif
 
-#define SAGA_THREAD_IMPORT(name) SAGA_IMPORT_ATTR("saga:thread", "saga_" name)
+#define HOST_IMPORT(module, name) SAGA_IMPORT_ATTR(module, "saga_" #name)
 
-/* -- §4.2 saga:thread ----------------------------------------------------- */
-SAGA_THREAD_IMPORT("thread_spawn")
+HOST_IMPORT("saga:thread", "thread_spawn")
 extern int  saga_thread_spawn(unsigned int entry_idx, unsigned int arg_ptr);
-SAGA_THREAD_IMPORT("thread_yield")
+
+HOST_IMPORT("saga:thread", "thread_yield")
 extern void saga_thread_yield(void);
 
-#undef SAGA_THREAD_IMPORT
+HOST_IMPORT("saga:log", "log")
+extern void saga_log(unsigned int level, const unsigned char *msg_ptr, unsigned int msg_len);
+
+#undef HOST_IMPORT
 #undef SAGA_IMPORT_ATTR

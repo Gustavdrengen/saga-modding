@@ -1,22 +1,26 @@
 # `com.example.arena-physics`
 
 Rust → WebAssembly mod. Owns the ball motion, the player paddle
-(controlled by the keyboard input that `arena-renderer` writes
-in `globalThis.Saga.input`), the score, and the rally-hit
-counter. Exports a small set of read-only getters that
-`arena-ai` (a C mod) imports as `extern "C" { fn get_ball_x() -> f32; … }`
-and that `arena-renderer` (JS) reads through
-`Saga.wasmExports.get_ball_x()`.
+(keyboard-driven by the orchestrator), the score, and the rally-hit
+counter. Exports a small set of read-only getters and a few setters
+so peer mods can read state through the merged WASM exports table
+rather than via raw linear-memory offsets.
 
-| Export name                                  | Owner    | Read by                                |
-| -------------------------------------------- | -------- | -------------------------------------- |
-| `tick(dt)`                                   | physics  | engine frame-loop calls each frame     |
-| `get_ball_x`, `get_ball_y`, `get_ball_vx`, `get_ball_vy`, `get_ball_r` | physics | arena-ai (C extern), arena-renderer (JS) |
-| `get_player_paddle_x`, `get_player_score`    | physics  | arena-ai, arena-renderer              |
-| `get_ai_paddle_x`, `get_ai_score`             | physics  | arena-renderer                        |
-| `get_state` (0=idle, 1=rally, 2=paused)       | physics  | arena-ai, arena-renderer              |
+| Export name                                              | Owner    | Read by                                |
+| -------------------------------------------------------- | -------- | -------------------------------------- |
+| `com_example_arena_physics_register`                     | physics  | Saga launcher once at boot             |
+| `com_example_arena_physics_tick(dt)`                     | physics  | orchestrator (`saga_start`) per frame  |
+| `com_example_arena_physics_get_ball_x/y/vx/vy/r`         | physics  | arena-ai tick args, renderer paint     |
+| `com_example_arena_physics_get_player_paddle_x/score`    | physics  | arena-ai, arena-renderer               |
+| `com_example_arena_physics_get_ai_paddle_x/score`        | physics  | arena-renderer                         |
+| `com_example_arena_physics_get_state/rally`              | physics  | arena-ai, arena-renderer               |
+| `com_example_arena_physics_set_input_dx/ai_x/state/serve`| physics  | orchestrator from keyboard + AI poll   |
 
-The entrypoint `arena_physics_init` is a no-op stub (state is
-zero-initialised); `tick(dt)` does all the work each frame.
+The registration entrypoint is non-blocking: it emits a `saga:log`
+diagnostic line, plus a few host-clock probes (`saga:time`) and a
+`fetch_buffer()` round-trip against `saga:assets`, before returning
+`0` so the launcher can move on to the next mod. The per-frame
+work happens in `tick(dt)`, called by the orchestrator's
+`saga_start` loop.
 
-It uses `saga-stdlib` for safe saga:asset fetches.
+The mod has no dependencies, so the launcher schedules it earliest.

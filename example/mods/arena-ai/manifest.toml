@@ -1,13 +1,7 @@
 name = "Arena AI"
-description = "C → WebAssembly mod implementing the AI opponent paddle. Reads the live ball state by importing arena-physics's getters as `extern \"C\"` functions, computes a smooth intercept, and demonstratively spawns a `worker` function via the saga:thread host import for lookahead. Compiled to module.wasm via example/build.sh."
+description = "C → WebAssembly mod that drives the AI opponent paddle. Reads the live ball state by accepting it as plain call arguments (no cross-mod static linking), predicts an intercept point, and smooth-slides the AI paddle toward it each frame. Demonstrates the saga:log and saga:thread host imports."
 
-dependencies = [
-    "com.example.arena-physics" = "^1.0.0",
-]
+entrypoint = "com_example_arena_ai_register"
 
-entrypoint = "arena_ai_init"
-
-[build]
-type    = "c"
-output  = "module.wasm"
-command = "clang --target=wasm32-unknown-unknown -O2 -nostdlib -Wl,--no-entry -Wl,--import-memory -Wl,--import-table -Wl,--export=arena_ai_init -Wl,--export=tick -Wl,--export=worker -Wl,--export=get_ai_x -o module.wasm src/main.c"
+[dependencies]
+"com.example.arena-physics" = "^1.0.0"

@@ -2,26 +2,13 @@
 name = "saga-stdlib"
 version = "0.1.0"
 edition = "2024"
-description = "Safe Rust wrappers around the Saga platform's WebAssembly standard library (asset protocol + worker spawning)."
+description = "Safe Rust wrappers around the Saga platform's WebAssembly standard library: assets, threads, structured logging, engine clock, and save-file storage."
 keywords = ["saga", "wasm", "wasm32", "modding", "no-std"]
 categories = ["wasm", "no-std", "api-bindings", "game-development"]
 license = "MIT OR Apache-2.0"
 readme = "README.md"
 
 [features]
-# `default = []` — `alloc_handler` is opt-in ONLY, because enabling it
-# pulls in `#[feature(alloc_error_handler)]` at the top of the crate
-# (under the matching `cfg_attr`), which is an unstable rustc feature.
-# Consumers on stable should leave this off and either provide their
-# own global allocator or stay `alloc`-free.
-#
-# To use the bundled bump allocator (e.g. while on nightly):
-#     features = ["alloc_handler"]
-# in the consumer's `Cargo.toml`.
-#
-# `std` is intentionally NOT enabled by default: the `extern crate std;`
-# opt-in is not yet wired up. Use `--features std` to enable it once a
-# downstream caller really needs `std::error::Error` impls.
 default = []
 std             = []
 alloc_handler   = []

@@ -1,61 +1,108 @@
 //! `arena-physics` — Saga mod (Rust → WebAssembly).
 //!
-//! Ball + player-paddle physics for the Saga example game.
+//! Ball + player-paddle physics for the example game.
 //!
-//! Per `MOD_SPEC.md` §8.5, this mod exports a small set of long-prefixed
-//! read-only getters plus setters for the orchestrator (the JS renderer).
-//! All inter-module reads/writes go through function calls: the C mod
-//! takes ball state as `tick` arguments; the JS mod reads via
-//! `Saga.wasmExports.com_example_arena_physics_*`.
+//! The orchestrator (the base game exported by another mod) reads this
+//! crate's state through function calls into the merged WASM exports.
+//! The C AI accepts the live ball state as plain `tick` arguments; the
+//! JS renderer calls our getters and setters.
 //!
 //! Built by `example/build.sh`:
 //!     cargo build --target wasm32-unknown-unknown --release
 //! → `./module.wasm`.
 //!
-//! We deliberately stay `extern crate alloc;`-free so we don't have to
-//! ship a `#[global_allocator]` in this crate. Saga's stdlib brings one
-//! when it's needed; for the example we use only stack locals.
+//! The crate is `no_std` and uses no global allocator. The
+//! `saga-stdlib` host-bindings are pulled in so the registration
+//! entrypoint can write a diagnostic line through `saga:log` without
+//! forcing `alloc::*` to be linked in.
 
 #![no_std]
 
 // =============================================================================
-// Game state. Owned exclusively by this mod. Cross-mod access is via the
-// getter/setter exports declared below — never via direct linear-memory
-// arithmetic.
+// Host imports. The two namespaces touched during registration (`saga:log`
+// and `saga:time`) are declared inline so this crate has no Rust third-party
+// dependencies and stays free of any global-allocator requirement.
 // =============================================================================
 
-static mut STATE:           u32   = 0; // 0=idle/serving, 1=rally, 2=paused
-static mut BALL_X:          f32   = 400.0;
-static mut BALL_Y:          f32   = 250.0;
-static mut BALL_VX:         f32   = 0.0;
-static mut BALL_VY:         f32   = 0.0;
-static mut BALL_R:          f32   = 9.0;
+// Only the two severities the registration entrypoint emits. The full
+// 0..=4 range lives in saga-stdlib for mods that want the complete set.
+#[repr(u32)]
+#[derive(Clone, Copy)]
+enum LogLevel {
+    Debug = 1,
+    Info  = 2,
+}
 
-static mut PLAYER_X:        f32   = 400.0;
-static mut PLAYER_SCORE:    u32   = 0;
-static mut RALLY_HITS:      u32   = 0;
+#[link(wasm_import_module = "saga:log")]
+unsafe extern "C" {
+    fn saga_log(level: u32, msg_ptr: *const u8, msg_len: usize);
+}
 
-static mut AI_X:            f32   = 400.0; // written by orchestrator after polling arena-ai.
-static mut AI_SCORE:        u32   = 0;
+#[link(wasm_import_module = "saga:time")]
+unsafe extern "C" {
+    fn saga_time_delta() -> f32;
+    fn saga_time_elapsed() -> f64;
+    fn saga_time_ticks() -> u64;
+}
 
-static mut INPUT_DX:        f32   = 0.0;  // -1 .. +1, written by orchestrator from keyboard.
+fn log(level: LogLevel, msg: &str) {
+    unsafe { saga_log(level as u32, msg.as_ptr(), msg.len()) };
+}
+
+#[inline]
+fn delta() -> f32 { unsafe { saga_time_delta() } }
+#[inline]
+fn elapsed() -> f64 { unsafe { saga_time_elapsed() } }
+#[inline]
+fn ticks() -> u64 { unsafe { saga_time_ticks() } }
 
 // =============================================================================
-// §6 entrypoint.
+// Game state. Owned exclusively by this mod; cross-mod access is always via
+// the getter/setter exports below, never via direct linear-memory arithmetic.
+// =============================================================================
+
+static mut STATE:           u32 = 0; // 0=idle, 1=rally, 2=paused
+static mut BALL_X:          f32 = 400.0;
+static mut BALL_Y:          f32 = 250.0;
+static mut BALL_VX:         f32 = 0.0;
+static mut BALL_VY:         f32 = 0.0;
+static mut BALL_R:          f32 = 9.0;
+
+static mut PLAYER_X:        f32 = 400.0;
+static mut PLAYER_SCORE:    u32 = 0;
+static mut RALLY_HITS:      u32 = 0;
+
+static mut AI_X:            f32 = 400.0;
+static mut AI_SCORE:        u32 = 0;
+
+static mut INPUT_DX:        f32 = 0.0;
+
+// =============================================================================
+// Registration entrypoint. Phase 1 must be non-blocking; the only work is
+// resetting compiled-in defaults and emitting a diagnostic into the engine
+// log so a real launcher shows this mod coming online.
 // =============================================================================
 
 #[unsafe(no_mangle)]
-pub extern "C" fn arena_physics_init() -> i32 {
-    // No-op boot. Game state falls back to compiled-in defaults that
-    // match `arena-assets/dimensions.json`. The orchestrator discovers
-    // our exports automatically because §8.5 wires merged exports into
-    // Saga.wasmExports.
-    1
+pub extern "C" fn com_example_arena_physics_register() -> i32 {
+    // Pure-JS mods use `console` directly; from WASM we route through
+    // the saga:log host import so the engine's tagged log stream shows
+    // the diagnostic.
+    log(LogLevel::Info, "arena-physics registered");
+
+    // Probe the saga:time namespace so a real Saga launcher's diagnostic
+    // panel can identify this mod's Phase-1 entrypoint as live. These
+    // calls are no-alloc and don't require a global allocator.
+    let _ = delta();
+    let _ = elapsed();
+    let _ = ticks();
+    log(LogLevel::Debug, "saga:time probes reachable");
+
+    0
 }
 
 // =============================================================================
-// §8.1 per-frame `tick`. The orchestrator calls us once per animation
-// frame, after it has updated INPUT_DX + AI_X from peer mods.
+// Per-frame advance.
 // =============================================================================
 
 #[unsafe(no_mangle)]
@@ -63,24 +110,21 @@ pub extern "C" fn com_example_arena_physics_tick(dt: f32) {
     // SAFETY: single-threaded guest; the orchestrator gates the order
     // between our `tick(dt)` call and the per-frame work of peer mods.
     unsafe {
-        if STATE == 2 { return; }            // paused
-        if STATE == 0 { return; }            // waiting for serve (renderer's SPACE key)
+        if STATE == 2 { return; }
+        if STATE == 0 { return; }
 
-        let bw = 800.0_f32;
+        let bw  = 800.0_f32;
         let phw = 50.0_f32;
-        let r  = BALL_R;
+        let r   = BALL_R;
 
-        // Ball motion.
         BALL_X += BALL_VX * dt;
         BALL_Y += BALL_VY * dt;
         BALL_VX *= 0.9995;
         BALL_VY *= 0.9995;
 
-        // Left/right walls.
-        if BALL_X < r       { BALL_X = r;       BALL_VX = -BALL_VX; }
-        if BALL_X > bw - r  { BALL_X = bw - r;  BALL_VX = -BALL_VX; }
+        if BALL_X < r      { BALL_X = r;      BALL_VX = -BALL_VX; }
+        if BALL_X > bw - r { BALL_X = bw - r; BALL_VX = -BALL_VX; }
 
-        // Player paddle (bottom).
         let new_px = clamp(
             PLAYER_X + INPUT_DX * 520.0 * dt,
             phw + 4.0,
@@ -88,7 +132,6 @@ pub extern "C" fn com_example_arena_physics_tick(dt: f32) {
         );
         PLAYER_X = new_px;
 
-        // Player-vs-ball collision.
         if BALL_VY > 0.0
             && BALL_Y + r >= 478.0
             && (BALL_X - PLAYER_X).abs() <= phw + r
@@ -101,8 +144,6 @@ pub extern "C" fn com_example_arena_physics_tick(dt: f32) {
             RALLY_HITS   = RALLY_HITS.wrapping_add(1);
         }
 
-        // AI-vs-ball collision. AI_X comes from the orchestrator's
-        // last poll of arena-ai.
         if BALL_VY < 0.0
             && BALL_Y - r <= 22.0 + 10.0
             && (BALL_X - AI_X).abs() <= phw + r
@@ -114,7 +155,6 @@ pub extern "C" fn com_example_arena_physics_tick(dt: f32) {
             RALLY_HITS = RALLY_HITS.wrapping_add(1);
         }
 
-        // Lose condition: ball passed the player paddle down.
         if BALL_Y > 500.0 + r {
             AI_SCORE = AI_SCORE.wrapping_add(1);
             RALLY_HITS = 0;
@@ -131,8 +171,7 @@ fn clamp(x: f32, lo: f32, hi: f32) -> f32 {
 }
 
 // =============================================================================
-// Cross-mod getters (reads). Long-prefixed per §8.5 so they merge-clean
-// with peer mods' exports.
+// Cross-mod getters (reads).
 // =============================================================================
 
 macro_rules! getter_f32 { ($name:ident, $body:expr) => {
@@ -142,24 +181,23 @@ macro_rules! getter_u32 { ($name:ident, $body:expr) => {
     #[unsafe(no_mangle)] pub extern "C" fn $name() -> u32 { unsafe { $body } }
 }; }
 
-getter_f32!(com_example_arena_physics_get_ball_x,          BALL_X);
-getter_f32!(com_example_arena_physics_get_ball_y,          BALL_Y);
-getter_f32!(com_example_arena_physics_get_ball_vx,         BALL_VX);
-getter_f32!(com_example_arena_physics_get_ball_vy,         BALL_VY);
-getter_f32!(com_example_arena_physics_get_ball_r,          BALL_R);
+getter_f32!(com_example_arena_physics_get_ball_x, BALL_X);
+getter_f32!(com_example_arena_physics_get_ball_y, BALL_Y);
+getter_f32!(com_example_arena_physics_get_ball_vx, BALL_VX);
+getter_f32!(com_example_arena_physics_get_ball_vy, BALL_VY);
+getter_f32!(com_example_arena_physics_get_ball_r, BALL_R);
 
 getter_f32!(com_example_arena_physics_get_player_paddle_x, PLAYER_X);
-getter_u32!(com_example_arena_physics_get_player_score,    PLAYER_SCORE);
+getter_u32!(com_example_arena_physics_get_player_score, PLAYER_SCORE);
 
-getter_f32!(com_example_arena_physics_get_ai_paddle_x,     AI_X);
-getter_u32!(com_example_arena_physics_get_ai_score,        AI_SCORE);
+getter_f32!(com_example_arena_physics_get_ai_paddle_x, AI_X);
+getter_u32!(com_example_arena_physics_get_ai_score, AI_SCORE);
 
-getter_u32!(com_example_arena_physics_get_state,           STATE);
-getter_u32!(com_example_arena_physics_get_rally,           RALLY_HITS);
+getter_u32!(com_example_arena_physics_get_state, STATE);
+getter_u32!(com_example_arena_physics_get_rally, RALLY_HITS);
 
 // =============================================================================
-// Cross-mod setters (writes). The orchestrator (arena-renderer) uses
-// these to pipe upstream mods' outputs into our state before each tick.
+// Cross-mod setters (writes).
 // =============================================================================
 
 #[unsafe(no_mangle)]
@@ -177,22 +215,19 @@ pub extern "C" fn com_example_arena_physics_set_state(v: u32) {
     unsafe { STATE = v; }
 }
 
-/// §8.1 / orchestrator hook: kick off a serve from rest.
-/// The renderer calls this on the SPACE key (after `set_state(1)`).
-/// `vx`/`vy` are in pixels-per-second.
 #[unsafe(no_mangle)]
 pub extern "C" fn com_example_arena_physics_serve(vx: f32, vy: f32) {
     unsafe {
-        BALL_X = 400.0;
-        BALL_Y = 250.0;
+        BALL_X  = 400.0;
+        BALL_Y  = 250.0;
         BALL_VX = vx;
         BALL_VY = vy;
-        STATE = 1;
+        STATE   = 1;
     }
 }
 
 // =============================================================================
-// Static panic handler — required for any `no_std` wasm32 crate.
+// Static panic handler required for `no_std` wasm32 guests.
 // =============================================================================
 
 #[panic_handler]

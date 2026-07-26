@@ -1,49 +1,39 @@
-//! # Saga Standard Library (Rust Wrapper)
+//! Safe, idiomatic Rust wrappers around the host-level Saga standard
+//! library. Mod authors targeting `wasm32-unknown-unknown` use these
+//! wrappers to interact with the Saga Launcher runtime without
+//! hand-rolling `extern "C"` blocks or sentinel-checking `i32`s.
 //!
-//! Safe, idiomatic Rust wrappers around the host-level **Saga standard library**
-//! described in the Saga Platform Mod Specification. Mod authors targeting
-//! `wasm32-unknown-unknown` can rely on these wrappers to interact with the
-//! Saga Launcher runtime (asset protocol, worker spawning, etc).
+//! # Modules
 //!
-//! ## Modules
+//! - [`assets`]  — open / size / read / close assets by `saga://` URI.
+//! - [`thread`]  — spawn `Worker`s on Web Worker threads.
+//! - [`log`]     — structured, engine-tagged logging.
+//! - [`time`]    — engine clock and frame-delta queries.
+//! - [`storage`] — save file inspection, read, write, and deletion.
+//! - [`sys`]     — raw 1:1 `extern "C"` bindings.
 //!
-//! | Module             | Spec section | Purpose                                |
-//! | ------------------ | ------------ | -------------------------------------- |
-//! | [`assets`]         | `saga:assets`| Open / read / close `saga://` URIs     |
-//! | [`thread`]         | `saga:thread`| Spawn `Worker`s on Web Worker threads |
-//! | [`sys`]            | (n/a)        | Raw 1:1 `extern "C"` bindings          |
+//! # Target
 //!
-//! ## Target
+//! `no_std` + `alloc`, intended for `wasm32-unknown-unknown`. The
+//! [`sys`] module exposes stub implementations on non-WASM targets so
+//! `cargo check`, `cargo build` (with `std`), `cargo test`, and
+//! `cargo doc` work on a developer machine without a Saga runtime.
 //!
-//! This crate is `no_std` + `alloc` and is intended to be compiled for the
-//! `wasm32-unknown-unknown` target. The host imports listed in [`sys`] are
-//! provided at runtime by the Saga Launcher via the `saga:assets` and
-//! `saga:thread` import namespaces.
+//! # Global allocator
 //!
-//! On non-WASM targets, the [`sys`] module exposes stub functions that simply
-//! return the documented "failure" sentinel. This allows `cargo check`,
-//! `cargo build` (with `std`), `cargo test`, and `cargo doc` to function on
-//! a developer's native machine without a Saga runtime.
-//!
-//! ## Global allocator (for `wasm32-unknown-unknown`)
-//!
-//! This crate declares `extern crate alloc;` to expose `alloc::vec::Vec<u8>`
-//! in [`fetch_buffer`](crate::assets::fetch_buffer). When the `alloc_handler`
-//! feature is enabled (default), we ship a small inline bump allocator that
-//! is `wasm32-unknown-unknown`-only and is registered as `#[global_allocator]`.
-//! Consumers can disable this with `--no-default-features --features std` and
-//! supply their own Wasm-memory allocator linked in via the host build.
-//!
-//! [`assets`]: crate::assets
-//! [`thread`]: crate::thread
-//! [`sys`]:    crate::sys
+//! The crate pulls in `extern crate alloc;` so [`assets::fetch_buffer`]
+//! and other helpers can return `Vec<u8>`. When the `alloc_handler`
+//! feature is enabled (default), an in-crate bump allocator is
+//! registered as `#[global_allocator]` for `wasm32-unknown-unknown`
+//! guests; production runtimes are expected to replace this with a
+//! proper linear-memory allocator linked via the host build pipeline.
 
 #![no_std]
 #![cfg_attr(docsrs, feature(doc_cfg))]
-// `#[alloc_error_handler]` is still an unstable language feature. We gate
-// the whole allocator module + this feature attribute behind the
-// `alloc_handler` Cargo feature so crates built without that feature do not
-// trigger the unstable-feature error.
+// `#[alloc_error_handler]` is still an unstable language feature. Gate
+// the allocator + this feature attribute behind the `alloc_handler`
+// Cargo feature so crates built without it don't trigger the
+// unstable-feature error at the language level.
 #![cfg_attr(
     all(target_family = "wasm", feature = "alloc_handler"),
     feature(alloc_error_handler)
@@ -52,30 +42,31 @@
 extern crate alloc;
 
 pub mod assets;
+pub mod log;
+pub mod storage;
 pub mod sys;
 pub mod thread;
+pub mod time;
 
-/// Re-exports of the most common high-level helpers.
-///
-/// The full API is under [`assets`] and [`thread`].
+// Re-exports of the most common high-level helpers.
 pub use crate::assets::{fetch_buffer, open, AssetError, AssetHandle, AssetResult};
+pub use crate::log::{emit, log, LogLevel};
+pub use crate::storage::{delete, list, read, read_meta, write, StorageError, StorageResult};
 pub use crate::thread::{spawn_thread, spawn_thread_raw, yield_now, ThreadError, ThreadResult, Worker};
+pub use crate::time::{delta, elapsed, ticks};
 
-// ---------------------------------------------------------------------------
-// Global allocator – wasm guest only, opt-in via `alloc_handler` feature.
-// Thread-safe bump built on `AtomicUsize`. Production runtimes are expected
-// to replace this with a proper Wasm-linear-memory allocator linked via the
-// host build pipeline.
-// ---------------------------------------------------------------------------
+// ----------------------------------------------------------------------------
+// In-crate bump allocator (opt-in via `alloc_handler`). Thread-safe via
+// `AtomicUsize`, doesn't free.
+// ----------------------------------------------------------------------------
 #[cfg(all(target_family = "wasm", feature = "alloc_handler"))]
 mod allocator {
     use core::alloc::{GlobalAlloc, Layout};
     use core::ptr;
     use core::sync::atomic::{AtomicUsize, Ordering};
 
-    const HEAP_SIZE: usize = 64 * 1024; // 64 KiB – generous for a demo mod.
+    const HEAP_SIZE: usize = 64 * 1024;
 
-    /// Tiny bump allocator. Thread-safe via `AtomicUsize`, doesn't free.
     pub struct Bump;
 
     // SAFETY: see [`GlobalAlloc`].
@@ -87,9 +78,6 @@ mod allocator {
             let align = layout.align().max(1);
             let size  = layout.size();
 
-            // CAS-loop: align the current offset, attempt to claim the
-            // required slice. The bumps are independent of any other
-            //                         worker / guest that shares the static.
             let mut current = NEXT.load(Ordering::Relaxed);
             loop {
                 let aligned = (current + align - 1) & !(align - 1);

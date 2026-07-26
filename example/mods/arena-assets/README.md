@@ -1,14 +1,15 @@
 # `com.example.arena-assets`
 
-A pure-data mod. No `tick` export — its job is to publish bytes
-through `saga://` URIs:
+A pure-data mod. The launcher auto-serves every JSON file in `assets/`
+under the convention `saga://com.example.arena-assets/<name>`; this
+module.js additionally publishes the same JSON to a module-level
+registry so a pure-JS peer mod can read it directly without going
+through `saga:assets`.
 
-| URI                                                                | File                       | Consumer                          |
-| ------------------------------------------------------------------ | -------------------------- | --------------------------------- |
-| `saga://com.example.arena-assets/palette.json`                     | `assets/palette.json`      | `arena-renderer` (browser paint) |
-| `saga://com.example.arena-assets/dimensions.json`                 | `assets/dimensions.json`   | `arena-physics` (lazy on first tick) |
+| Asset name         | File                       | Consumer                          |
+| ------------------ | -------------------------- | --------------------------------- |
+| `palette.json`     | `assets/palette.json`      | `arena-renderer` (browser paint)  |
+| `dimensions.json`  | `assets/dimensions.json`   | Tuning constants for AI/physics   |
 
-It declares no dependencies, so the Saga Launcher boots it at
-the earliest possible dep level (alongside `arena-physics`,
-which is also a dependency-free root). The Launcher invokes
-`register_assets` exactly once on boot.
+The registration entrypoint is `com_example_arena_assets_register`;
+it is dependency-free, so the launcher schedules it earliest.

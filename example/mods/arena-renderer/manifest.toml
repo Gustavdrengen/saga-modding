@@ -1,14 +1,9 @@
 name = "Arena Renderer"
-description = "Pure-JS mod that draws ball + paddles + score onto the canvas supplied by the Saga launcher, and that captures keyboard input into the game's input axis. This is the *only* mod in the example that owns the requestAnimationFrame loop; it calls Saga.runtime.fireEachFrame(dt) once per frame so every mod's `tick(dt)` export fires in dep order before the renderer paints."
+description = "Pure-JS mod that draws ball + paddles + score onto a canvas and captures keyboard input. This module.js exports both the Phase 1 registration entrypoint (com_example_arena_renderer_register) and the Phase 2 saga_start entrypoint that boots the requestAnimationFrame loop and drives per-frame work for arena-physics and arena-ai."
 
-dependencies = [
-    "com.example.arena-assets"    = "^1.0.0",
-    "com.example.arena-physics"  = "^1.0.0",
-    "com.example.arena-ai"        = "^1.0.0",
-]
+entrypoint = "com_example_arena_renderer_register"
 
-entrypoint = "arena_renderer_init"
-
-[build]
-type   = "js"
-output = "module.js"
+[dependencies]
+"com.example.arena-assets"  = "^1.0.0"
+"com.example.arena-physics" = "^1.0.0"
+"com.example.arena-ai"      = "^1.0.0"
