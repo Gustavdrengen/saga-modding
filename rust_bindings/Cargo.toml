@@ -1,0 +1,22 @@
+[package]
+name = "saga-stdlib"
+version = "0.1.0"
+edition = "2024"
+description = "Safe Rust wrappers around the Saga platform's WebAssembly standard library (asset protocol + worker spawning)."
+keywords = ["saga", "wasm", "wasm32", "modding", "no-std"]
+categories = ["wasm", "no-std", "api-bindings", "game-development"]
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+
+[features]
+# When enabled, `AssetError` / `ThreadError` gain a `std::error::Error`
+# impl so they interoperate cleanly with ecosystem error libraries
+# (`anyhow`, `thiserror`, etc.) in `std` builds.
+default = []
+std = []
+
+[dependencies]
+
+[package.metadata.docs.rs]
+targets = ["wasm32-unknown-unknown"]
+rustdoc-args = ["--cfg", "docsrs"]
