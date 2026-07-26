@@ -20,7 +20,7 @@ mod bindings {
     //! so the Saga runtime recognises the symbols at instantiation time.
 
     #[link(wasm_import_module = "saga:assets")]
-    extern "C" {
+    unsafe extern "C" {
         /// Open an asset identified by a `saga://` URI.
         ///
         /// Returns the asset handle (> 0 on success, <= 0 on error).
@@ -39,7 +39,7 @@ mod bindings {
     }
 
     #[link(wasm_import_module = "saga:thread")]
-    extern "C" {
+    unsafe extern "C" {
         /// Spawn a Web Worker that runs `entry_idx` (table index) over `arg_ptr`.
         ///
         /// Returns a thread id (> 0) or error code (< 0).

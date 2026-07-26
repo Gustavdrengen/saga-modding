@@ -1,0 +1,8 @@
+name = "Arena Assets"
+description = "Data bundle that powers the Saga example game. Registers a colour palette (palette.json) and a dimensions config (dimensions.json) under this mod's saga:// URIs on boot. Other mods fetch them via Saga.assets.fetchBuffer."
+
+entrypoint = "register_assets"
+
+[build]
+type   = "assets"
+output = "assets/"

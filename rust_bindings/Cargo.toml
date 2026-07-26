@@ -9,11 +9,22 @@ license = "MIT OR Apache-2.0"
 readme = "README.md"
 
 [features]
-# When enabled, `AssetError` / `ThreadError` gain a `std::error::Error`
-# impl so they interoperate cleanly with ecosystem error libraries
-# (`anyhow`, `thiserror`, etc.) in `std` builds.
+# `default = []` — `alloc_handler` is opt-in ONLY, because enabling it
+# pulls in `#[feature(alloc_error_handler)]` at the top of the crate
+# (under the matching `cfg_attr`), which is an unstable rustc feature.
+# Consumers on stable should leave this off and either provide their
+# own global allocator or stay `alloc`-free.
+#
+# To use the bundled bump allocator (e.g. while on nightly):
+#     features = ["alloc_handler"]
+# in the consumer's `Cargo.toml`.
+#
+# `std` is intentionally NOT enabled by default: the `extern crate std;`
+# opt-in is not yet wired up. Use `--features std` to enable it once a
+# downstream caller really needs `std::error::Error` impls.
 default = []
-std = []
+std             = []
+alloc_handler   = []
 
 [dependencies]
 

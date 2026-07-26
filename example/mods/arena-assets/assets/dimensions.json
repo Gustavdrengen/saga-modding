@@ -1,0 +1,12 @@
+{
+  "field_w":        800,
+  "field_h":        500,
+  "paddle_w":       100,
+  "paddle_h":       10,
+  "paddle_y_bot":   478,
+  "paddle_y_top":   22,
+  "ball_radius":    9,
+  "serve_velocity": 240,
+  "max_ai_speed":   320,
+  "ball_friction":  0.9995
+}
