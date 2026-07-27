@@ -29,13 +29,20 @@ ROOT="$(pwd -P)"
 MODS_DIR="$ROOT/mods"
 DIST_DIR="$ROOT/dist"
 SCRATCH_DIR="$ROOT/build"
+# Top-level C/C++ bindings (saga.h). C mods `#include "saga.h"`
+# against this path, replacing the old per-mod saga.h pattern
+# that double-stringified and produced import names like
+# `saga_"log"`.
+C_BINDINGS_DIR="$(cd "$ROOT/.." && pwd -P)/c_bindings"
 
-[ -n "$SCRATCH_DIR" ] && [ "${SCRATCH_DIR#/}" != "$SCRATCH_DIR" ] \
+[ -n "$SCRATCH_DIR" ]    && [ "${SCRATCH_DIR#/}"    != "$SCRATCH_DIR"    ] \
   || { echo "SCRATCH_DIR '$SCRATCH_DIR' must be an absolute path" >&2; exit 2; }
-[ -n "$DIST_DIR" ]    && [ "${DIST_DIR#/}"    != "$DIST_DIR"    ] \
+[ -n "$DIST_DIR" ]       && [ "${DIST_DIR#/}"       != "$DIST_DIR"       ] \
   || { echo "DIST_DIR '$DIST_DIR' must be an absolute path"    >&2; exit 2; }
-[ -n "$MODS_DIR" ]    && [ "${MODS_DIR#/}"    != "$MODS_DIR"    ] \
+[ -n "$MODS_DIR" ]       && [ "${MODS_DIR#/}"       != "$MODS_DIR"       ] \
   || { echo "MODS_DIR '$MODS_DIR' must be an absolute path"    >&2; exit 2; }
+[ -d "$C_BINDINGS_DIR" ] \
+  || { echo "C_BINDINGS_DIR '$C_BINDINGS_DIR' missing; the repo's c_bindings/ should sit one level above example/" >&2; exit 2; }
 
 # Trap is installed BEFORE any destructive op so even a failing
 # `mkdir -p` or `rm -rf` participates in cleanup. EXIT alone fires on
@@ -191,6 +198,7 @@ for mod_dir in "$MODS_DIR"/*/; do
           -Wl,--allow-undefined \
           -Wl,--import-memory \
           -Wl,--import-table \
+          -I"$C_BINDINGS_DIR" \
           "${export_flags[@]}" \
           -o "$mod_dist/module.wasm" \
           "${src_files[@]}" >&2
