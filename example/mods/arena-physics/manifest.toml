@@ -1,3 +1,6 @@
+id      = "com.example.arena-physics"
+version = "1.0.0"
+
 name = "Arena Physics"
 description = "Rust → WebAssembly mod implementing the ball + player-paddle physics for the Saga example game. Compiled to module.wasm via example/build.sh. Exports a small set of cross-mod getters and setters so arena-ai (C) and arena-renderer (JS) can read and write state through the merged WASM exports instead of via raw linear-memory offsets."
 

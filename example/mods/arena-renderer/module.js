@@ -288,22 +288,13 @@ function drawRect(c, x, y, w, h, r, fill) {
 }
 
 // =============================================================================
-// Palette fetch through the saga:// scheme. In a real Saga launcher the
-// engine routes saga:// to its asset layer; here we accept both the
-// direct saga:// URL (which a hosted Service Worker can intercept) and a
-// pre-registered `getAsset` callback from the arena-assets mod.
+// Palette fetch through the saga:// asset scheme (MOD_SPEC.md §3.3, §4.1).
+// The Saga Launcher (or a hosted Service Worker mocking its asset layer)
+// resolves `saga://com.example.arena-assets/palette.json` to the bytes
+// of that file. If the fetch rejects we keep defaultPalette() so the
+// game still renders.
 // =============================================================================
 function maybeFetchPalette() {
-  if (!g_pExports) return;
-  if (typeof globalThis !== "undefined"
-      && globalThis.__arenaAssets
-      && globalThis.__arenaAssets["com.example.arena-assets"]
-      && globalThis.__arenaAssets["com.example.arena-assets"]["palette.json"]) {
-    const raw = globalThis.__arenaAssets["com.example.arena-assets"]["palette.json"];
-    try { g_palette = Object.assign({}, defaultPalette(), JSON.parse(raw)); }
-    catch (_e) { /* fall back to defaults */ }
-    return;
-  }
   if (typeof fetch === "undefined") return;
   fetch("saga://com.example.arena-assets/palette.json")
     .then((r) => (r && typeof r.text === "function") ? r.text() : null)

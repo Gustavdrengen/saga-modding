@@ -1,3 +1,6 @@
+id      = "com.example.arena-ai"
+version = "1.0.0"
+
 name = "Arena AI"
 description = "C → WebAssembly mod that drives the AI opponent paddle. Reads the live ball state by accepting it as plain call arguments (no cross-mod static linking), predicts an intercept point, and smooth-slides the AI paddle toward it each frame. Demonstrates the saga:log and saga:thread host imports."
 

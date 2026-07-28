@@ -1,3 +1,6 @@
+id      = "com.example.arena-renderer"
+version = "1.0.0"
+
 name = "Arena Renderer"
 description = "Pure-JS mod that draws ball + paddles + score onto a canvas and captures keyboard input. This module.js exports both the Phase 1 registration entrypoint (com_example_arena_renderer_register) and the Phase 2 saga_start entrypoint that boots the requestAnimationFrame loop and drives per-frame work for arena-physics and arena-ai."
 

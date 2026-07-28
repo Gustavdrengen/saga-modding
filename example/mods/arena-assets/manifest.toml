@@ -1,6 +1,9 @@
+id      = "com.example.arena-assets"
+version = "1.0.0"
+
 name = "Arena Assets"
-description = "Data bundle that powers the Saga example game. Registers a colour palette (palette.json) and a dimensions config (dimensions.json) under this mod's saga:// URIs during the registration phase. Other mods fetch them through the saga:assets host import."
+description = "Pure-data mod that ships the example game's configuration. The Saga Launcher auto-serves every file under assets/ as a `saga://com.example.arena-assets/<file>` URI (see MOD_SPEC.md §3.3 and §4.1). Peer WASM mods fetch assets through the saga:assets host import; peer JS mods fetch them via fetch(\"saga://com.example.arena-assets/<file>\")."
 
-entrypoint = "com_example_arena_assets_register"
-
-[dependencies]
+# entrypoint is intentionally absent: a pure-data mod has no Phase 1
+# to register. The Saga Launcher surfaces this mod to consumers
+# purely by serving its assets/ directory under the saga:// scheme.

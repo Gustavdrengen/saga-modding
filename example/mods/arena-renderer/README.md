@@ -14,8 +14,9 @@ launch pass.
 
 - **Phase 1 (`register`)**: stash the merged WASM exports the engine
   passed in, locate a canvas (or create one), install keyboard
-  listeners, kick off an async palette fetch. Return `0` immediately
-  without starting the frame loop.
+  listeners, kick off an async palette fetch through the saga://
+  asset scheme (`fetch("saga://com.example.arena-assets/palette.json")`).
+  Return `0` immediately without starting the frame loop.
 - **Phase 2 (`saga_start`)**: boot the `requestAnimationFrame` loop.
   Each frame: read the live ball state from `arena-physics` via the
   merged exports, hand those values to `arena-ai` as plain
@@ -25,3 +26,12 @@ launch pass.
 Because the orchestrator pattern is private to this mod, every peer
 mod's Phase 1 is genuinely non-blocking, regardless of how complex
 the runtime frame pipeline turns out to be.
+
+## Asset access
+
+The palette (and any other asset this mod wants) is loaded by
+fetching the canonical `saga://` URI the Saga Launcher's asset
+layer exposes. The launcher resolves the URI to bytes; this mod
+just `JSON.parse`s the response and overlays the colours onto a
+hard-coded `defaultPalette()` so a missing/empty fetch still
+renders something.

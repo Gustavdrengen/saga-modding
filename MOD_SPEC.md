@@ -26,7 +26,7 @@ A Mod ID uniquely identifies a mod across the entire Saga ecosystem.
 - `io.github.developer.lighting-pack`
 - `net.saga.official.base-game`
 
-> **Note:** Mod IDs and release versions are managed by the Saga Launcher registry during distribution and publishing.
+> **Note:** Every mod declares its `id` and `version` directly in `manifest.toml` (§3.1). The Saga Launcher registry reads those fields during distribution and publishing — they are not assigned by the launcher.
 
 ---
 
@@ -52,6 +52,12 @@ my-saga-mod/
 The manifest specifies human-readable metadata and dependency declarations required by the Saga loader to resolve execution order.
 
 ```toml
+# Mod identity (§2.1): RDN identifier and SemVer version. Every mod
+# must declare both — `saga://` URIs (§3.3), dependency keys, and the
+# launcher registry all derive from these fields.
+id      = "com.example.foo"
+version = "1.0.0"
+
 # Display details for Saga Launcher / In-game UI
 name = "My Custom Rendering Mod"
 description = "Adds real-time particle rendering and custom shader pipelines."
@@ -70,6 +76,8 @@ entrypoint = "com_company_mod_register"
 
 | Field          | Type     | Required | Description                                                            |
 | -------------- | -------- | -------- | ---------------------------------------------------------------------- |
+| `id`           | `string` | **Yes**  | Mod identifier in RDN format (§2.1). Drives `saga://` URIs (§3.3) and is the key in any dependency table. |
+| `version`      | `string` | **Yes**  | Mod version as a SemVer string (e.g. `"1.0.0"`). The launcher uses this value to resolve `[dependencies]` constraints. |
 | `name`         | `string` | **Yes**  | Human-readable display name.                                           |
 | `description`  | `string` | **Yes**  | Detailed description of the mod's function.                            |
 | `dependencies` | `table`  | No       | Map of Mod ID keys (`string`) to SemVer rule values (`string`).        |
