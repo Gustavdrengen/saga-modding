@@ -7,10 +7,10 @@ edition = "2021"
 path = "src/lib.rs"
 crate-type = ["cdylib"]
 
-# Host imports (`saga:log`, `saga:time`) used by the registration
-# entrypoint are declared inline in src/lib.rs as `extern "C"` blocks,
-# so arena-physics has no third-party Rust dependencies and stays
-# free of any global-allocator requirement.
+# Host imports (`saga:log`) used by the registration entrypoint are
+# declared inline in src/lib.rs as `extern "C"` blocks, so arena-physics
+# has no third-party Rust dependencies and stays free of any
+# global-allocator requirement.
 
 [profile.release]
 opt-level = "s"

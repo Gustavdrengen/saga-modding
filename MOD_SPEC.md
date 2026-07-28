@@ -24,7 +24,7 @@ A Mod ID uniquely identifies a mod across the entire Saga ecosystem.
 - **Examples:**
 - `com.company.project.core-physics`
 - `io.github.developer.lighting-pack`
-- `net.saga.official.base-game`
+- `com.example.game.base-game`
 
 > **Note:** Every mod declares its `id` and `version` directly in `manifest.toml` (§3.1). The Saga Launcher registry reads those fields during distribution and publishing — they are not assigned by the launcher.
 
@@ -74,14 +74,14 @@ entrypoint = "com_company_mod_register"
 
 #### Fields Schema
 
-| Field          | Type     | Required | Description                                                            |
-| -------------- | -------- | -------- | ---------------------------------------------------------------------- |
-| `id`           | `string` | **Yes**  | Mod identifier in RDN format (§2.1). Drives `saga://` URIs (§3.3) and is the key in any dependency table. |
+| Field          | Type     | Required | Description                                                                                                            |
+| -------------- | -------- | -------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `id`           | `string` | **Yes**  | Mod identifier in RDN format (§2.1). Drives `saga://` URIs (§3.3) and is the key in any dependency table.              |
 | `version`      | `string` | **Yes**  | Mod version as a SemVer string (e.g. `"1.0.0"`). The launcher uses this value to resolve `[dependencies]` constraints. |
-| `name`         | `string` | **Yes**  | Human-readable display name.                                           |
-| `description`  | `string` | **Yes**  | Detailed description of the mod's function.                            |
-| `dependencies` | `table`  | No       | Map of Mod ID keys (`string`) to SemVer rule values (`string`).        |
-| `entrypoint`   | `string` | No       | Unique symbol name of a registration function called on boot (see §6). |
+| `name`         | `string` | **Yes**  | Human-readable display name.                                                                                           |
+| `description`  | `string` | **Yes**  | Detailed description of the mod's function.                                                                            |
+| `dependencies` | `table`  | No       | Map of Mod ID keys (`string`) to SemVer rule values (`string`).                                                        |
+| `entrypoint`   | `string` | No       | Unique symbol name of a registration function called on boot (see §6).                                                 |
 
 ---
 
@@ -188,20 +188,17 @@ extern "C" {
 
 ---
 
-### 4.4 Engine Clock & Time (`saga:time`)
+### 4.4 Time (`saga:time`)
 
-Provides high-precision time and frame delta data.
+Wall-clock and monotonic-time queries. The runtime does not own the per-frame loop, so frame deltas are not part of the standard library — mods compute their own `dt` from a local clock (`performance.now()` and friends).
 
 ```rust
 extern "C" {
-    /// Returns time elapsed since the last frame (in seconds).
-    fn saga_time_delta() -> f32;
+    /// Wall-clock timestamp: milliseconds since the Unix epoch.
+    fn saga_time_now() -> u64;
 
-    /// Returns total engine execution time since boot (in seconds).
+    /// Monotonic time elapsed since the Saga session started, in seconds.
     fn saga_time_elapsed() -> f64;
-
-    /// Returns total fixed engine ticks executed.
-    fn saga_time_ticks() -> u64;
 }
 
 ```
@@ -329,8 +326,8 @@ pub extern "C" fn com_company_mod_register(
 
 Once the Saga Launcher confirms that **every active mod's registration entrypoint has returned `0**`, Phase 2 begins.
 
-- **Single Execution:** The launcher calls `saga_start()` **only once** on the primary base game module (`net.saga.official.base-game` or equivalent root engine).
-- **Execution Contract:** `saga_start` initiates the primary game execution loop using non-blocking browser mechanics (e.g., `requestAnimationFrame` callbacks or worker event ticks).
+- **Single Execution:** The launcher calls `saga_start()` **only once** on the primary base game module (`com.example.game.base-game` or equivalent root engine).
+- **Execution Contract:** `saga_start` initiates the primary game execution loop using non-blocking browser mechanics
 - **Symbol Contract:**
 
 ```rust

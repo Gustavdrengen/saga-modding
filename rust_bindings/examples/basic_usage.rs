@@ -21,7 +21,7 @@
 use std::vec::Vec;
 
 use saga_stdlib::{
-    delta, elapsed, emit, fetch_buffer, log, spawn_thread, ticks, AssetError, AssetHandle,
+    elapsed, emit, fetch_buffer, log, now, spawn_thread, AssetError, AssetHandle,
     LogLevel, StorageResult,
 };
 
@@ -59,22 +59,17 @@ fn main() {
     }
     println!("worker wrote {} bytes", buf.len());
 
-    // 4. Engine-clock queries. The native stub returns 0 for all of
-    // these; a real Saga runtime returns frame delta / elapsed seconds
-    // / a monotonically increasing tick count.
-    println!(
-        "clock delta={}; elapsed={}; ticks={}",
-        delta(),
-        elapsed(),
-        ticks()
-    );
+    // 4. Time queries. The native stub returns 0 for both; a real
+    // Saga runtime returns wall-clock Unix-ms and monotonic seconds
+    // since the session started.
+    println!("clock now={} ms; elapsed={} s", now(), elapsed());
 
     // 5. Structured logging goes through saga:log. `emit` formats in
     // place into a bounded stack buffer.
     log(LogLevel::Info, "structured log via saga:log");
     emit(
         LogLevel::Debug,
-        format_args!("tick={} elapsed={:.3}s", ticks(), elapsed()),
+        format_args!("now={} ms elapsed={:.3}s", now(), elapsed()),
     );
 
     // 6. Save-file storage API. Every call returns the host's failure

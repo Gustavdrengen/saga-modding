@@ -1,24 +1,18 @@
 //! Safe wrappers around the `saga:time` host import.
 //!
-//! Reads the engine's high-resolution clock. Hosts typically implement
-//! these as `performance.now()` deltas and a ticked counter.
+//! Hosts typically back these with `performance.now()` for the
+//! monotonic counter and `Date.now()` for the wall-clock read.
 
 use crate::sys;
 
-/// Time elapsed since the previous frame, in seconds.
+/// Current wall-clock timestamp, in milliseconds since the Unix epoch.
 #[inline]
-pub fn delta() -> f32 {
-    unsafe { sys::saga_time_delta() }
+pub fn now() -> u64 {
+    unsafe { sys::saga_time_now() }
 }
 
-/// Total engine execution time since boot, in seconds.
+/// Monotonic seconds elapsed since the Saga session started.
 #[inline]
 pub fn elapsed() -> f64 {
     unsafe { sys::saga_time_elapsed() }
-}
-
-/// Total fixed engine ticks executed.
-#[inline]
-pub fn ticks() -> u64 {
-    unsafe { sys::saga_time_ticks() }
 }

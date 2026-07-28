@@ -17,10 +17,10 @@ rather than via raw linear-memory offsets.
 | `com_example_arena_physics_set_input_dx/ai_x/state/serve`| physics  | orchestrator from keyboard + AI poll   |
 
 The registration entrypoint is non-blocking: it emits a `saga:log`
-diagnostic line, plus a few host-clock probes (`saga:time`) and a
-`fetch_buffer()` round-trip against `saga:assets`, before returning
-`0` so the launcher can move on to the next mod. The per-frame
-work happens in `tick(dt)`, called by the orchestrator's
-`saga_start` loop.
+diagnostic line and returns `0` so the launcher can move on to the
+next mod. Per-frame work happens in `tick(dt)`, called by the
+orchestrator's `saga_start` loop; the `dt` argument is computed
+by the orchestrator from its own local clock, since the runtime
+does not own ticking.
 
 The mod has no dependencies, so the launcher schedules it earliest.

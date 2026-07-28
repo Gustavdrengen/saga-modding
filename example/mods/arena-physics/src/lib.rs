@@ -19,9 +19,9 @@
 #![no_std]
 
 // =============================================================================
-// Host imports. The two namespaces touched during registration (`saga:log`
-// and `saga:time`) are declared inline so this crate has no Rust third-party
-// dependencies and stays free of any global-allocator requirement.
+// Host imports. Only `saga:log` is touched during registration, so it's
+// declared inline here and the crate has no Rust third-party dependencies
+// and stays free of any global-allocator requirement.
 // =============================================================================
 
 // Only the two severities the registration entrypoint emits. The full
@@ -38,23 +38,9 @@ unsafe extern "C" {
     fn saga_log(level: u32, msg_ptr: *const u8, msg_len: usize);
 }
 
-#[link(wasm_import_module = "saga:time")]
-unsafe extern "C" {
-    fn saga_time_delta() -> f32;
-    fn saga_time_elapsed() -> f64;
-    fn saga_time_ticks() -> u64;
-}
-
 fn log(level: LogLevel, msg: &str) {
     unsafe { saga_log(level as u32, msg.as_ptr(), msg.len()) };
 }
-
-#[inline]
-fn delta() -> f32 { unsafe { saga_time_delta() } }
-#[inline]
-fn elapsed() -> f64 { unsafe { saga_time_elapsed() } }
-#[inline]
-fn ticks() -> u64 { unsafe { saga_time_ticks() } }
 
 // =============================================================================
 // Game state. Owned exclusively by this mod; cross-mod access is always via
@@ -89,14 +75,6 @@ pub extern "C" fn com_example_arena_physics_register() -> i32 {
     // the saga:log host import so the engine's tagged log stream shows
     // the diagnostic.
     log(LogLevel::Info, "arena-physics registered");
-
-    // Probe the saga:time namespace so a real Saga launcher's diagnostic
-    // panel can identify this mod's Phase-1 entrypoint as live. These
-    // calls are no-alloc and don't require a global allocator.
-    let _ = delta();
-    let _ = elapsed();
-    let _ = ticks();
-    log(LogLevel::Debug, "saga:time probes reachable");
 
     0
 }

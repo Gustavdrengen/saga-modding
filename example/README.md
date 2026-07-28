@@ -77,7 +77,7 @@ orchestrator calls them once per frame.
 | ai → physics          | smoothed AI paddle x                | `get_ai_x()` then `set_ai_x(f32)`                        |
 | physics → renderer    | ball + paddles + scores             | reads via `com_example_arena_physics_get_*`              |
 | saga:log ↔ all        | diagnostic lines                    | `saga_log(level, msg)` (WASM), `console.log` (JS)        |
-| saga:time ↔ physics   | clock probes during registration    | `delta()` / `elapsed()` / `ticks()`                      |
+| saga:time ↔ all       | wall-clock + monotonic-since-boot   | `now()` / `elapsed()` (mod-side, optional)                |
 
 ### Why a JS orchestrator instead of `extern` cross-mod?
 

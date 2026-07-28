@@ -38,9 +38,8 @@ mod bindings {
 
     #[link(wasm_import_module = "saga:time")]
     unsafe extern "C" {
-        pub fn saga_time_delta() -> f32;
+        pub fn saga_time_now() -> u64;
         pub fn saga_time_elapsed() -> f64;
-        pub fn saga_time_ticks() -> u64;
     }
 
     #[link(wasm_import_module = "saga:storage")]
@@ -92,9 +91,8 @@ mod bindings {
 
     pub unsafe fn saga_log(_level: u32, _msg_ptr: *const u8, _msg_len: usize) {}
 
-    pub unsafe fn saga_time_delta() -> f32 { 0.0 }
+    pub unsafe fn saga_time_now() -> u64 { 0 }
     pub unsafe fn saga_time_elapsed() -> f64 { 0.0 }
-    pub unsafe fn saga_time_ticks() -> u64 { 0 }
 
     pub unsafe fn saga_save_list(_out_buf: *mut u8, _max_len: usize) -> i32 { -1 }
 

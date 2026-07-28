@@ -69,98 +69,75 @@ extern "C" {
 /* ---------- import-attribute plumbing ---------------------------------- */
 
 #if defined(__wasm32__) || defined(__wasm__)
-  #define SAGA_IMPORT_ATTR(module, name) \
-      __attribute__((import_module(module), import_name(name)))
+#define SAGA_IMPORT_ATTR(module, name)                                         \
+  __attribute__((import_module(module), import_name(name)))
 #else
-  #define SAGA_IMPORT_ATTR(module, name)
+#define SAGA_IMPORT_ATTR(module, name)
 #endif
 
 /* Macro: take the BASE SYMBOL as a bare identifier (e.g. `log`),
  * not a string literal. The `#` stringify + adjacent literal
  * concatenation does the canonical "saga_<name>" assembly.
  * See the contract block at the top of the file. */
-#define SAGA_HOST_IMPORT(module, name) \
-    SAGA_IMPORT_ATTR(module, "saga_" #name)
-
+#define SAGA_HOST_IMPORT(module, name) SAGA_IMPORT_ATTR(module, "saga_" #name)
 
 /* ---------- saga:log ----------------------------------------------------- */
 
 SAGA_HOST_IMPORT("saga:log", log)
-extern void saga_log(uint32_t level,
-                     const uint8_t *msg_ptr,
-                     size_t msg_len);
-
+extern void saga_log(uint32_t level, const uint8_t *msg_ptr, size_t msg_len);
 
 /* ---------- saga:thread -------------------------------------------------- */
 
 SAGA_HOST_IMPORT("saga:thread", thread_spawn)
-extern int32_t saga_thread_spawn(size_t entry_idx,
-                                 size_t arg_ptr);
+extern int32_t saga_thread_spawn(size_t entry_idx, size_t arg_ptr);
 
 SAGA_HOST_IMPORT("saga:thread", thread_yield)
 extern void saga_thread_yield(void);
 
-
 /* ---------- saga:time ---------------------------------------------------- */
 
-SAGA_HOST_IMPORT("saga:time", time_delta)
-extern float saga_time_delta(void);
+SAGA_HOST_IMPORT("saga:time", time_now)
+extern uint64_t saga_time_now(void);
 
 SAGA_HOST_IMPORT("saga:time", time_elapsed)
 extern double saga_time_elapsed(void);
 
-SAGA_HOST_IMPORT("saga:time", time_ticks)
-extern uint64_t saga_time_ticks(void);
-
-
 /* ---------- saga:assets -------------------------------------------------- */
 
 SAGA_HOST_IMPORT("saga:assets", asset_open)
-extern int32_t saga_asset_open(const uint8_t *uri_ptr,
-                               size_t uri_len);
+extern int32_t saga_asset_open(const uint8_t *uri_ptr, size_t uri_len);
 
 SAGA_HOST_IMPORT("saga:assets", asset_get_size)
 extern size_t saga_asset_get_size(int32_t handle);
 
 SAGA_HOST_IMPORT("saga:assets", asset_read)
-extern int32_t saga_asset_read(int32_t handle,
-                               uint8_t *dest_ptr,
+extern int32_t saga_asset_read(int32_t handle, uint8_t *dest_ptr,
                                size_t length);
 
 SAGA_HOST_IMPORT("saga:assets", asset_close)
 extern void saga_asset_close(int32_t handle);
 
-
 /* ---------- saga:storage ------------------------------------------------- */
 
 SAGA_HOST_IMPORT("saga:storage", save_list)
-extern int32_t saga_save_list(uint8_t *out_buf,
-                              size_t max_len);
+extern int32_t saga_save_list(uint8_t *out_buf, size_t max_len);
 
 SAGA_HOST_IMPORT("saga:storage", save_read_meta)
 extern int32_t saga_save_read_meta(const uint8_t *save_id_ptr,
-                                   size_t save_id_len,
-                                   uint8_t *meta_buf,
+                                   size_t save_id_len, uint8_t *meta_buf,
                                    size_t max_len);
 
 SAGA_HOST_IMPORT("saga:storage", save_read)
-extern int32_t saga_save_read(const uint8_t *save_id_ptr,
-                              size_t save_id_len,
-                              uint8_t *dest_ptr,
-                              size_t max_len);
+extern int32_t saga_save_read(const uint8_t *save_id_ptr, size_t save_id_len,
+                              uint8_t *dest_ptr, size_t max_len);
 
 SAGA_HOST_IMPORT("saga:storage", save_write)
-extern int32_t saga_save_write(const uint8_t *save_id_ptr,
-                               size_t save_id_len,
-                               const uint8_t *data_ptr,
-                               size_t data_len,
-                               const uint8_t *meta_ptr,
-                               size_t meta_len);
+extern int32_t saga_save_write(const uint8_t *save_id_ptr, size_t save_id_len,
+                               const uint8_t *data_ptr, size_t data_len,
+                               const uint8_t *meta_ptr, size_t meta_len);
 
 SAGA_HOST_IMPORT("saga:storage", save_delete)
-extern void saga_save_delete(const uint8_t *save_id_ptr,
-                             size_t save_id_len);
-
+extern void saga_save_delete(const uint8_t *save_id_ptr, size_t save_id_len);
 
 #if defined(__cplusplus)
 } /* extern "C" */

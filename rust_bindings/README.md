@@ -17,7 +17,7 @@ instead of hand-rolling `extern "C"` blocks and sentinel-checking
 | `assets`     | `saga:assets`  | Open / size / read / close assets by `saga://` URI.    |
 | `thread`     | `saga:thread`  | Spawn `Worker`s on Web Workers + cooperative `yield`.  |
 | `log`        | `saga:log`     | Structured logging with severity levels.               |
-| `time`       | `saga:time`    | Engine clock: frame delta, elapsed time, tick count.   |
+| `time`       | `saga:time`    | Wall-clock `now()` (Unix ms) and monotonic `elapsed()` since boot. |
 | `storage`    | `saga:storage` | Save-file inspection, read, write, and deletion.       |
 | `sys`        | (n/a)          | Raw 1:1 `extern "C"` bindings.                         |
 
@@ -35,7 +35,7 @@ Module skeleton:
 ```rust
 #![no_std]
 extern crate alloc;
-use saga_stdlib::{fetch_buffer, spawn_thread, Worker, log, LogLevel, delta};
+use saga_stdlib::{fetch_buffer, spawn_thread, Worker, log, LogLevel, now};
 
 extern "C" fn worker(_arg: *mut u8) {
     log(LogLevel::Info, "worker running");
@@ -48,8 +48,8 @@ pub extern "C" fn com_example_my_register() -> i32 {
     let args = [1u8, 2, 3, 4];
     let _ = spawn_thread(worker, &args as *const _ as usize);
 
-    let dt = delta();
-    let _ = dt;
+    let ts = now();
+    let _ = ts;
 
     0
 }

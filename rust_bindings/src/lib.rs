@@ -8,7 +8,7 @@
 //! - [`assets`]  — open / size / read / close assets by `saga://` URI.
 //! - [`thread`]  — spawn `Worker`s on Web Worker threads.
 //! - [`log`]     — structured, engine-tagged logging.
-//! - [`time`]    — engine clock and frame-delta queries.
+//! - [`time`]    — wall-clock (`now`) and monotonic-from-boot (`elapsed`) queries.
 //! - [`storage`] — save file inspection, read, write, and deletion.
 //! - [`sys`]     — raw 1:1 `extern "C"` bindings.
 //!
@@ -53,7 +53,7 @@ pub use crate::assets::{fetch_buffer, open, AssetError, AssetHandle, AssetResult
 pub use crate::log::{emit, log, LogLevel};
 pub use crate::storage::{delete, list, read, read_meta, write, StorageError, StorageResult};
 pub use crate::thread::{spawn_thread, spawn_thread_raw, yield_now, ThreadError, ThreadResult, Worker};
-pub use crate::time::{delta, elapsed, ticks};
+pub use crate::time::{elapsed, now};
 
 // ----------------------------------------------------------------------------
 // In-crate bump allocator (opt-in via `alloc_handler`). Thread-safe via
