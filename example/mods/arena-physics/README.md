@@ -23,4 +23,10 @@ orchestrator's `saga_start` loop; the `dt` argument is computed
 by the orchestrator from its own local clock, since the runtime
 does not own ticking.
 
+The loader allocates **16 MiB** of linear memory for this mod via
+`manifest.toml: max_memory` (`"16 MiB"` — see `MOD_SPEC.md` §3.1 and
+§3.2). The mod's actual state (ball + two paddles + scores + rally
+counter) is trivially small; the budget leaves comfortable headroom
+for the linear-memory allocator.
+
 The mod has no dependencies, so the launcher schedules it earliest.

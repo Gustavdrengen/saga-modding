@@ -5,3 +5,9 @@ name = "Arena Physics"
 description = "Rust → WebAssembly mod implementing the ball + player-paddle physics for the Saga example game. Compiled to module.wasm via example/build.sh. Exports a small set of cross-mod getters and setters so arena-ai (C) and arena-renderer (JS) can read and write state through the merged WASM exports instead of via raw linear-memory offsets."
 
 entrypoint = "com_example_arena_physics_register"
+
+# The Rust module owns only a small amount of state (ball + two
+# paddles + scores + rally counter); 16 MiB of linear memory leaves
+# comfortable headroom for the linear-memory allocator and any
+# future embedding sized up by the loader from `max_memory`.
+max_memory = "16 MiB"

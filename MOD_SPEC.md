@@ -65,6 +65,16 @@ description = "Adds real-time particle rendering and custom shader pipelines."
 # Optional: unique WASM symbol or named JS export called during Phase 1 (Registration).
 entrypoint = "com_company_mod_register"
 
+# Required only when this mod ships a `module.wasm`: the maximum
+# amount of unified linear memory the loader allocates for this
+# specific module during the synthesis pass (see §3.2). Human-readable
+# decimal byte quantity with a binary-prefix unit — e.g. "64 KiB",
+# "16 MiB", "1 GiB". The loader rounds the value up to the nearest
+# WASM page (64 KiB) when reassigning `__memory_base`. A `module.wasm`
+# mod that omits this field fails manifest validation; a pure-JS or
+# pure-data mod must not include it.
+max_memory = "16 MiB"
+
 # Dependencies mapping required Mod IDs to semantic-version constraints
 [dependencies]
 "com.saga.official.core" = "^1.0.0"
@@ -82,6 +92,7 @@ entrypoint = "com_company_mod_register"
 | `description`  | `string` | **Yes**  | Detailed description of the mod's function.                                                                            |
 | `dependencies` | `table`  | No       | Map of Mod ID keys (`string`) to SemVer rule values (`string`).                                                        |
 | `entrypoint`   | `string` | No       | Unique symbol name of a registration function called on boot (see §6).                                                 |
+| `max_memory`   | `string` | Conditional | Maximum linear-memory allocation for this mod, as a human-readable byte quantity with a binary-prefix unit (`KiB`, `MiB`, `GiB`) — e.g. `"16 MiB"`. **Required** when the mod ships a `module.wasm` (see §3.2); **must not appear** for pure-JS or pure-data mods. The value is the upper bound on the cell of the unified linear memory the loader assigns this module during the synthesis pass (§5 step 2). |
 
 ---
 
@@ -96,6 +107,15 @@ entrypoint = "com_company_mod_register"
 
 1. Compilers must output relocatable modules that import runtime base offsets (`env.__memory_base` and `env.__table_base`), **OR**
 2. The Saga Launcher synthesis pass uses Binaryen AST relocation passes to re-base static data segment offsets and function pointers into disjoint memory blocks prior to instantiation.
+
+#### `max_memory` Allocation & Relocation
+
+When a mod ships a `module.wasm`, the loader reads `max_memory` from `manifest.toml` to size the cell of the unified linear memory it allocates for that specific module during the synthesis pass (§5 step 2). This acts as the upper bound on `__memory_base` carving: the loader carves out a contiguous region of the shared `SharedArrayBuffer` of at least `max_memory` (rounded up to the nearest whole WASM page, 64 KiB) for this module's static data, stack, and heap before re-basing its offsets and function pointers.
+
+- **Format:** decimal byte quantity with a binary-prefix unit suffix — `"64 KiB"`, `"16 MiB"`, `"1 GiB"`. The loader parses the value and rounds the resulting byte count **up** to the nearest WASM page before reservation.
+- **Required:** any mod that ships a `module.wasm` **must** declare `max_memory`. Validation rejects manifests that ship a `module.wasm` without it.
+- **Forbidden:** pure-JS and pure-data mods (no `module.wasm`) **must not** include `max_memory` in the manifest — there is no WASM module to size.
+- **Cross-mod accounting:** the loader sums `max_memory` across all active WASM-using mods (plus host overhead) to size the shared `SharedArrayBuffer` it instantiates. Per-mod `max_memory` is a ceiling for that module only; it does not preallocate the full amount at boot.
 
 #### `module.js` Specification & Security Scope
 

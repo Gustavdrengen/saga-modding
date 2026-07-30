@@ -21,6 +21,11 @@ The mod uses two host-import namespaces:
   phase so a real launcher's diagnostic panel shows the mod coming
   online.
 
+The loader allocates **16 MiB** of linear memory for this mod via
+`manifest.toml: max_memory` (`"16 MiB"` — see `MOD_SPEC.md` §3.1 and
+§3.2). That cell of the unified linear memory holds the small fixed
+state plus the cooperative worker's per-call scratch buffer.
+
 | Export                                | Owner    | Read by                          |
 | ------------------------------------- | -------- | -------------------------------- |
 | `com_example_arena_ai_register`       | this mod | Saga launcher once at boot       |
