@@ -5,12 +5,22 @@ edition = "2021"
 
 [lib]
 path = "src/lib.rs"
-crate-type = ["cdylib"]
+crate-type = ["staticlib"]
 
-# Host imports (`saga:log`) used by the registration entrypoint are
-# declared inline in src/lib.rs as `extern "C"` blocks, so arena-physics
-# has no third-party Rust dependencies and stays free of any
-# global-allocator requirement.
+[dependencies]
+# Cargo traverses Git repositories to find packages in subdirectories,
+# so this works even though saga-stdlib lives under rust_bindings/.
+saga-stdlib = {
+    git = "https://github.com/Gustavdrengen/saga-modding.git",
+    package = "saga-stdlib",
+}
+
+# The example intentionally uses normal Rust `std`. Cargo packages the
+# relocatable Wasm objects and runtime members into module.a; the Saga
+# launcher links the archive with other mod archives.
+
+[profile.dev]
+panic = "abort"
 
 [profile.release]
 opt-level = "s"

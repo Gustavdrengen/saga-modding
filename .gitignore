@@ -1,5 +1,5 @@
 target/
-# Cargo.lock from the rust_bindings library — cdylib mods commit theirs.
+# Cargo.lock from the rust_bindings library — staticlib mods commit theirs.
 rust_bindings/Cargo.lock
 
 # Scratch + artifact dirs owned by example/build.sh; the script wipes

@@ -1,41 +1,34 @@
 # `com.example.arena-ai`
 
-C → WebAssembly mod. Drives the AI opponent (top) paddle with two
-complementary strategies:
+C → WebAssembly mod. It drives the AI opponent paddle and emits one
+`module.a` archive containing relocatable WebAssembly objects.
 
-- A **lightweight interceptor** invoked every frame: the
-  orchestrator's `saga_start` loop pushes the latest ball state to
-  `com_example_arena_ai_tick(bx, by, bvx, bvy, dt)`, which predicts
-  where the ball will meet the AI line and smooth-slides `g_ai_x`
-  toward that intercept.
-- A **heavyweight worker** registered into the unified function table;
-  a real Saga launcher dispatches it via `saga_thread_spawn(worker,
-  arg_ptr)`. The worker demonstrates `saga_thread_yield` cooperation.
+The source declares these physics functions as ordinary C ABI imports:
 
-The mod uses two host-import namespaces:
+```c
+extern float com_example_arena_physics_get_ball_x(void);
+extern void com_example_arena_physics_set_ai_x(float value);
+```
 
-- `saga:thread` — `saga_thread_spawn` / `saga_thread_yield` for the
-  worker dispatch and cooperative preemption.
-- `saga:log` — `saga_log(level, msg_ptr, msg_len)` writes a
-  human-readable line into the engine log during the registration
-  phase so a real launcher's diagnostic panel shows the mod coming
-  online.
+The producer build leaves those peer symbols unresolved in `module.a`. The
+Saga launcher resolves them against `arena-physics/module.a` during the final
+`wasm-ld` link. The resulting calls are direct WebAssembly calls and do not
+cross JavaScript.
 
-The loader allocates **16 MiB** of linear memory for this mod via
-`manifest.toml: max_memory` (`"16 MiB"` — see `MOD_SPEC.md` §3.1 and
-§3.2). That cell of the unified linear memory holds the small fixed
-state plus the cooperative worker's per-call scratch buffer.
+The module also imports:
 
-| Export                                | Owner    | Read by                          |
-| ------------------------------------- | -------- | -------------------------------- |
-| `com_example_arena_ai_register`       | this mod | Saga launcher once at boot       |
-| `com_example_arena_ai_tick`           | this mod | `arena-renderer` (orchestrator)  |
-| `com_example_arena_ai_get_ai_x`       | this mod | `arena-renderer` (orchestrator)  |
-| `com_example_arena_ai_reset_ai`       | this mod | `arena-renderer` (orchestrator)  |
-| `worker`                              | this mod | `saga:thread` dispatcher         |
+- `saga:thread` for the worker and cooperative yield;
+- `saga:log` for registration diagnostics.
 
-No peer mod's exports are statically linked into this crate; the
-orchestrator reads physics state via merged exports and ships it as
-plain arguments to `tick`. That makes the build pipeline
-self-contained — a per-mod `clang --target=wasm32-unknown-unknown`
-does not need any cross-mod object files at all.
+| Export                                | Used by                          |
+| ------------------------------------- | -------------------------------- |
+| `com_example_arena_ai_register`       | launcher registration            |
+| `com_example_arena_ai_tick`           | JavaScript orchestrator          |
+| `com_example_arena_ai_direct_sample` | direct-call validation/demo      |
+| `com_example_arena_ai_get_ai_x`       | JavaScript orchestrator          |
+| `com_example_arena_ai_reset_ai`       | JavaScript orchestrator          |
+| `com_example_arena_ai_worker`         | `saga:thread` dispatcher         |
+
+The producer build never runs `wasm-ld`, `wasm-opt`, a Saga launcher, or a
+WebAssembly runtime. It only creates the package artifact required by the
+specification.

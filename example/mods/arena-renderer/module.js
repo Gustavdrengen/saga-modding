@@ -88,8 +88,8 @@ export function com_example_arena_renderer_register(wasmExports, memory, table) 
   console.log("arena-renderer registered");
 
   if (!g_pExports || !g_pExports.get_ball_x || !g_pExports.tick) {
-    // No physics exports available; the engine may retry registration
-    // after Binaryen merge, or this mod simply won't paint.
+    // No physics exports are available in the final launcher-provided
+    // export namespace, so this mod cannot paint.
     return 0;
   }
 

@@ -19,21 +19,19 @@
 //! `cargo check`, `cargo build` (with `std`), `cargo test`, and
 //! `cargo doc` work on a developer machine without a Saga runtime.
 //!
-//! # Global allocator
+//! # Allocation
 //!
-//! The crate pulls in `extern crate alloc;` so [`assets::fetch_buffer`]
-//! and other helpers can return `Vec<u8>`. When the `alloc_handler`
-//! feature is enabled (default), an in-crate bump allocator is
-//! registered as `#[global_allocator]` for `wasm32-unknown-unknown`
-//! guests; production runtimes are expected to replace this with a
-//! proper linear-memory allocator linked via the host build pipeline.
+//! The crate pulls in `extern crate alloc` so [`assets::fetch_buffer`]
+//! and other helpers can return `Vec<u8>`. By default, the crate does not
+//! install a global allocator. A `no_std` + `alloc` final module MUST supply
+//! its own allocator, or explicitly enable this crate's `alloc_handler`
+//! feature to use its fixed bump allocator. A module using ordinary Rust
+//! `std` receives the normal allocator from `std` and does not need a
+//! `#[global_allocator]` merely to use this crate. Saga does not replace
+//! either runtime; its merger and optimizer operate on WebAssembly.
 
 #![no_std]
 #![cfg_attr(docsrs, feature(doc_cfg))]
-// `#[alloc_error_handler]` is still an unstable language feature. Gate
-// the allocator + this feature attribute behind the `alloc_handler`
-// Cargo feature so crates built without it don't trigger the
-// unstable-feature error at the language level.
 #![cfg_attr(
     all(target_family = "wasm", feature = "alloc_handler"),
     feature(alloc_error_handler)
@@ -56,8 +54,9 @@ pub use crate::thread::{spawn_thread, spawn_thread_raw, yield_now, ThreadError, 
 pub use crate::time::{elapsed, now};
 
 // ----------------------------------------------------------------------------
-// In-crate bump allocator (opt-in via `alloc_handler`). Thread-safe via
-// `AtomicUsize`, doesn't free.
+// Optional in-crate bump allocator. It is enabled only by the explicit
+// `alloc_handler` feature and is not required by Saga or by this crate's
+// default configuration.
 // ----------------------------------------------------------------------------
 #[cfg(all(target_family = "wasm", feature = "alloc_handler"))]
 mod allocator {
@@ -76,7 +75,7 @@ mod allocator {
             static NEXT: AtomicUsize = AtomicUsize::new(0);
 
             let align = layout.align().max(1);
-            let size  = layout.size();
+            let size = layout.size();
 
             let mut current = NEXT.load(Ordering::Relaxed);
             loop {
@@ -89,7 +88,10 @@ mod allocator {
                     return ptr::null_mut();
                 }
                 match NEXT.compare_exchange_weak(
-                    current, end, Ordering::Relaxed, Ordering::Relaxed,
+                    current,
+                    end,
+                    Ordering::Relaxed,
+                    Ordering::Relaxed,
                 ) {
                     Ok(_) => return HEAP.as_ptr().add(aligned) as *mut u8,
                     Err(actual) => current = actual,
@@ -104,5 +106,7 @@ mod allocator {
     pub static ALLOC: Bump = Bump;
 
     #[alloc_error_handler]
-    pub fn on_oom(_layout: Layout) -> ! { loop {} }
+    pub fn on_oom(_layout: Layout) -> ! {
+        loop {}
+    }
 }

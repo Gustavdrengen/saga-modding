@@ -1,364 +1,242 @@
 # Saga Platform Mod Specification
 
----
+## 1. Scope and terminology
 
-## 1. Overview & Architecture
+Saga is a WebAssembly mod platform. A mod is a directory containing a manifest and zero or more WebAssembly, JavaScript, and asset files.
 
-The **Saga Platform** uses a modular, multi-target execution model. A **Mod** (short for both _Module_ and _Modification_) is the fundamental unit of code, assets, and content extension within Saga.
+This document is normative. **MUST**, **MUST NOT**, **REQUIRED**, **SHALL**, and **SHALL NOT** state requirements. **MAY** and **OPTIONAL** state permitted choices. No behavior outside this document is part of the Saga contract.
 
-Mods run in a web-native environment (WASM + JavaScript). Rather than treating JavaScript purely as glue code for WebAssembly, Saga treats **JavaScript modules (`module.js`) and WebAssembly modules (`module.wasm`) as peer execution units**.
+Saga does not identify, inspect, or special-case the source language, compiler, standard library, allocator, or runtime used to produce a mod. The launcher operates on archives, WebAssembly linking metadata, symbols, relocations, functions, globals, memories, tables, data, and imports.
 
-At runtime, the Saga Engine dynamically merges all active `.wasm` files into a single, optimized WebAssembly instance while aggregating all corresponding `.js` code modules into a single execution environment sharing a unified linear memory space and symbol table.
+A **link archive** is the file `module.a` shipped by a WebAssembly mod. It is an `ar` archive containing one or more relocatable WebAssembly object files. A **final module** is the single executable WebAssembly module produced by the Saga launcher after linking all active mod archives. A **host import** is an import implemented by the Saga host, including the `saga:*` APIs. A **peer import** is an undefined WebAssembly symbol resolved from another mod archive during the final link.
 
----
+A `module.a` archive is not executable and MUST NOT be instantiated directly. Only the final module produced by the launcher is executable.
 
-## 2. Mod Identification & Namespace Conventions
+## 2. Mod layout
 
-### 2.1 Mod Identifier (ID)
-
-A Mod ID uniquely identifies a mod across the entire Saga ecosystem.
-
-- **Format:** Reverse Domain Notation (RDN).
-- **Syntax:** `[domain-reverse].[project].[modname]` (arbitrary dot-separated segments allowed).
-- **Rules:** Lowercase alphanumeric characters and hyphens only (`a-z`, `0-9`, `-`).
-- **Examples:**
-- `com.company.project.core-physics`
-- `io.github.developer.lighting-pack`
-- `com.example.game.base-game`
-
-> **Note:** Every mod declares its `id` and `version` directly in `manifest.toml` (§3.1). The Saga Launcher registry reads those fields during distribution and publishing — they are not assigned by the launcher.
-
----
-
-## 3. Directory Layout & File Contracts
-
-A valid Saga mod directory must conform to the following layout:
+A valid mod has this layout:
 
 ```text
-my-saga-mod/
-├── manifest.toml         [REQUIRED] Mod metadata & dependency declaration
-├── module.wasm           [OPTIONAL] Compiled WebAssembly binary
-├── module.js             [OPTIONAL] Companion JavaScript module
-├── README.md             [OPTIONAL] Human-readable documentation
-├── src/                  [OPTIONAL] Source code (Rust, C, etc.)
-└── assets/               [OPTIONAL] Arbitrary assets (textures, audio, data)
-    ├── textures/
-    └── audio/
-
+my-mod/
+├── manifest.toml         REQUIRED
+├── module.a              REQUIRED for a WebAssembly mod
+├── module.js             OPTIONAL JavaScript module
+├── README.md             OPTIONAL documentation
+├── src/                  OPTIONAL source code
+└── assets/               OPTIONAL asset files
 ```
 
-### 3.1 `manifest.toml` (Required)
+A mod MUST contain `module.a`, `module.js`, or an `assets/` directory. A mod containing WebAssembly code MUST contain exactly one file named `module.a`. A WebAssembly mod MUST NOT ship `module.wasm`, `.o`, `.rlib`, or any other Wasm link artifact as part of the Saga package.
 
-The manifest specifies human-readable metadata and dependency declarations required by the Saga loader to resolve execution order.
+`module.a` MUST be a standard `ar` archive. Every payload member MUST be a relocatable WebAssembly object that contains the WebAssembly linking metadata required by `wasm-ld`, including the `linking` custom section. Standard `ar` symbol-index members are permitted and are not payload members. The launcher MUST reject an archive containing a non-WebAssembly payload member or a finalized executable WebAssembly module.
+
+The package format exposes only `module.a`. The number of object members inside the archive is an implementation detail of the producing toolchain.
+
+## 3. Manifest
+
+Every `manifest.toml` MUST contain:
 
 ```toml
-# Mod identity (§2.1): RDN identifier and SemVer version. Every mod
-# must declare both — `saga://` URIs (§3.3), dependency keys, and the
-# launcher registry all derive from these fields.
-id      = "com.example.foo"
-version = "1.0.0"
-
-# Display details for Saga Launcher / In-game UI
-name = "My Custom Rendering Mod"
-description = "Adds real-time particle rendering and custom shader pipelines."
-
-# Optional: unique WASM symbol or named JS export called during Phase 1 (Registration).
-entrypoint = "com_company_mod_register"
-
-# Required only when this mod ships a `module.wasm`: the maximum
-# amount of unified linear memory the loader allocates for this
-# specific module during the synthesis pass (see §3.2). Human-readable
-# decimal byte quantity with a binary-prefix unit — e.g. "64 KiB",
-# "16 MiB", "1 GiB". The loader rounds the value up to the nearest
-# WASM page (64 KiB) when reassigning `__memory_base`. A `module.wasm`
-# mod that omits this field fails manifest validation; a pure-JS or
-# pure-data mod must not include it.
-max_memory = "16 MiB"
-
-# Dependencies mapping required Mod IDs to semantic-version constraints
-[dependencies]
-"com.saga.official.core" = "^1.0.0"
-"org.community.math-utils" = ">=2.1.0"
-
+id          = "com.example.foo"
+version     = "1.0.0"
+name        = "Example Mod"
+description = "A complete description of the mod."
 ```
 
-#### Fields Schema
+`id` MUST use reverse-domain notation and contain only lowercase letters, digits, and hyphens in dot-separated segments. `version` MUST be a semantic version. `name` and `description` MUST be non-empty strings.
 
-| Field          | Type     | Required | Description                                                                                                            |
-| -------------- | -------- | -------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `id`           | `string` | **Yes**  | Mod identifier in RDN format (§2.1). Drives `saga://` URIs (§3.3) and is the key in any dependency table.              |
-| `version`      | `string` | **Yes**  | Mod version as a SemVer string (e.g. `"1.0.0"`). The launcher uses this value to resolve `[dependencies]` constraints. |
-| `name`         | `string` | **Yes**  | Human-readable display name.                                                                                           |
-| `description`  | `string` | **Yes**  | Detailed description of the mod's function.                                                                            |
-| `dependencies` | `table`  | No       | Map of Mod ID keys (`string`) to SemVer rule values (`string`).                                                        |
-| `entrypoint`   | `string` | No       | Unique symbol name of a registration function called on boot (see §6).                                                 |
-| `max_memory`   | `string` | Conditional | Maximum linear-memory allocation for this mod, as a human-readable byte quantity with a binary-prefix unit (`KiB`, `MiB`, `GiB`) — e.g. `"16 MiB"`. **Required** when the mod ships a `module.wasm` (see §3.2); **must not appear** for pure-JS or pure-data mods. The value is the upper bound on the cell of the unified linear memory the loader assigns this module during the synthesis pass (§5 step 2). |
+A WebAssembly mod MUST contain an `exports` array listing every public WebAssembly function that the launcher must retain and expose from the final module:
 
----
+```toml
+entrypoint = "com_example_foo_register"
+exports = [
+    "com_example_foo_register",
+    "com_example_foo_tick",
+]
+```
 
-### 3.2 Code Modules (`module.wasm` and `module.js`)
+Every name in `exports` MUST be a valid WebAssembly function symbol. Every listed symbol MUST be defined by exactly one member of `module.a`. The launcher MUST retain every listed symbol and MUST export it from the final module. `entrypoint`, when present, MUST appear in `exports`.
 
-#### `module.wasm` Specification & Relocation Rules
+A JavaScript-only mod MAY contain an `entrypoint` string and MUST NOT contain an `exports` array. A pure-data mod MUST NOT contain either field.
 
-- **Target:** `wasm32-unknown-unknown` (or dynamic linking side-module targets).
-- **Shared Memory & Table:** Must import shared linear memory (`env.memory`) and indirect function table (`env.__indirect_function_table`).
-- **Symbol Uniqueness:** Because Binaryen merges all `.wasm` binaries into a single global symbol table, exported functions **must not** use generic names like `mod_init`. Symbols must be explicitly unique (e.g., RDN-prefixed: `com_company_mod_register`) or mapped via `manifest.toml`.
-- **Memory & Table Relocation:** To prevent linear memory corruption during binary synthesis:
+`[dependencies]` is optional. Each key MUST be a valid mod ID and each value MUST be a supported semantic-version constraint. The launcher MUST resolve dependencies before linking and MUST execute registration in dependency-first topological order.
 
-1. Compilers must output relocatable modules that import runtime base offsets (`env.__memory_base` and `env.__table_base`), **OR**
-2. The Saga Launcher synthesis pass uses Binaryen AST relocation passes to re-base static data segment offsets and function pointers into disjoint memory blocks prior to instantiation.
+## 4. Language-neutral link contract
 
-#### `max_memory` Allocation & Relocation
+A mod author MAY use any compiler and language that can produce `module.a` satisfying §2. The launcher MUST NOT require a language-specific runtime, allocator, standard library, compiler plugin, source transformation, or replacement library.
 
-When a mod ships a `module.wasm`, the loader reads `max_memory` from `manifest.toml` to size the cell of the unified linear memory it allocates for that specific module during the synthesis pass (§5 step 2). This acts as the upper bound on `__memory_base` carving: the loader carves out a contiguous region of the shared `SharedArrayBuffer` of at least `max_memory` (rounded up to the nearest whole WASM page, 64 KiB) for this module's static data, stack, and heap before re-basing its offsets and function pointers.
+The link archive MUST use the WebAssembly relocatable-object convention understood by `wasm-ld`. Relocatable members MUST preserve their `linking` and `reloc.*` custom sections. The linker MUST use symbol and relocation metadata rather than source-language rules.
 
-- **Format:** decimal byte quantity with a binary-prefix unit suffix — `"64 KiB"`, `"16 MiB"`, `"1 GiB"`. The loader parses the value and rounds the resulting byte count **up** to the nearest WASM page before reservation.
-- **Required:** any mod that ships a `module.wasm` **must** declare `max_memory`. Validation rejects manifests that ship a `module.wasm` without it.
-- **Forbidden:** pure-JS and pure-data mods (no `module.wasm`) **must not** include `max_memory` in the manifest — there is no WASM module to size.
-- **Cross-mod accounting:** the loader sums `max_memory` across all active WASM-using mods (plus host overhead) to size the shared `SharedArrayBuffer` it instantiates. Per-mod `max_memory` is a ceiling for that module only; it does not preallocate the full amount at boot.
+Public peer functions MUST use unique RDN-derived symbols such as:
 
-#### `module.js` Specification & Security Scope
+```text
+com_example_arena_physics_tick
+com_example_arena_physics_get_ball_x
+com_example_arena_ai_tick
+```
 
-`module.js` runs directly within the standard browser execution environment alongside the Saga host engine. Standard browser context security applies.
+A public function imported by one mod MUST have the same WebAssembly function type as the definition supplied by another mod. The launcher MUST reject an unresolved peer symbol and MUST reject incompatible duplicate strong definitions.
 
-`module.js` must be an ES Module exporting:
+Host imports MUST remain imports in the final module. The launcher MUST satisfy host imports at instantiation using the `saga:*` host namespaces in §8. The launcher MUST reject every unresolved import that is not a declared host import.
 
-1. `imports`: An object containing host functions exposed to the unified WASM environment.
-2. An optional registration entrypoint matching `manifest.toml`.
+An ordinary direct call to a peer symbol MUST become a direct call to the resolved function in the final WebAssembly module. The launcher MUST NOT route that call through JavaScript or a host callback. A source function that explicitly uses an indirect call MUST retain indirect-call semantics, and the launcher MUST construct the final function table accordingly.
+
+## 5. Final linking and runtime architecture
+
+For an active set containing WebAssembly mods, the launcher MUST perform these steps in order:
+
+```text
+1. Validate manifests and resolve dependencies.
+2. Validate every module.a archive and every relocatable member.
+3. Collect every active module.a as a wasm-ld input.
+4. Root every symbol listed in every manifest's exports array.
+5. Link all archives with wasm-ld into one final WebAssembly module.
+6. Resolve peer imports and preserve declared saga:* host imports.
+7. Produce one final linear memory and one final function table.
+8. Run the mandatory Binaryen optimization passes in §7.
+9. Validate the optimized final WebAssembly module.
+10. Instantiate exactly one final WebAssembly instance.
+11. Run WebAssembly registration entrypoints.
+12. Run JavaScript registration functions.
+13. Invoke the root module's saga_start function exactly once.
+```
+
+The launcher MUST use `wasm-ld` or a linker implementing the same WebAssembly relocatable-object and archive semantics. The launcher MUST NOT use `wasm-merge` on finalized per-mod WebAssembly executables because `module.a` is the only WebAssembly artifact accepted in a Saga package.
+
+The final module MUST contain exactly one linear memory and exactly one function table. All linked WebAssembly functions execute in that final instance. JavaScript modules execute in the host JavaScript environment and are not converted into WebAssembly.
+
+The launcher MUST run linker-generated initialization functions before WebAssembly registration entrypoints. Registration MUST NOT replace language-runtime initialization.
+
+## 6. Memory, runtime, and allocator semantics
+
+The final linked module has one linear memory and one function table. Memory layout, stack layout, data placement, globals, function indices, table indices, and relocation are determined by the final linker. Saga does not assign a separate `max_memory` reservation to each mod and manifests MUST NOT contain a `max_memory` field.
+
+A mod MAY contain its normal standard library, allocator, panic/exception machinery, garbage collector, startup code, and other runtime code inside `module.a`. Saga MUST NOT replace or configure those components based on the source language.
+
+The linker MUST apply ordinary WebAssembly symbol, archive, weak, COMDAT, and relocation semantics. A duplicate strong definition is a link error. A weak or COMDAT definition is handled according to the WebAssembly linking convention. The final optimization pass MAY remove structurally identical functions after linking, but it MUST NOT merge mutable allocator state, writable data, mutable globals, stacks, or initialization state merely because their initial values or function bodies look similar.
+
+Two modules MAY use the same runtime implementation. The linker and optimizer MUST retain one implementation when ordinary symbol/COMDAT resolution or exact function equality proves that one copy is sufficient. The final module MAY contain multiple implementations of semantically equivalent runtime behavior when the WebAssembly structure, symbols, or mutable state are not identical.
+
+Saga MUST NOT require module authors to use a Saga allocator or a Saga runtime. A Rust module using `std` uses the Rust runtime emitted by its build. A C module uses the runtime emitted by its build. The same rule applies to every other supported language.
+
+Pointers MUST NOT cross a mod boundary unless the participating public ABI defines pointer ownership, memory layout, lifetime, and allocator compatibility. Scalar arguments and exported functions are the default cross-mod ABI.
+
+The launcher MUST reject a final link that produces more than one memory or more than one table. Memory growth is growth of the single final memory; Saga does not provide per-mod memory quotas in this specification.
+
+## 7. Mandatory post-link optimization
+
+After `wasm-ld` produces the final module and before instantiation, the launcher MUST run these passes in order:
+
+1. **Duplicate function elimination.** Remove a defined function only when its WebAssembly type and complete normalized WebAssembly expression tree are identical to the surviving function. Rewrite every direct call, function reference, table element, export, and initialization reference to the survivor.
+2. **Dead-code elimination.** Remove functions, globals, tables, and data segments unreachable from retained exports, the start function, active table elements, host imports, or retained initialization functions.
+3. **Validation.** Validate the resulting WebAssembly module and reject the final link if validation fails.
+
+The duplicate-function pass MUST compare function type, operators, operand types, constants, immediates, referenced function identity, referenced global identity, referenced table identity, and control-flow structure. It MUST NOT merge imported functions. It MUST preserve the behavior and types of all manifest exports and table elements.
+
+The optimization pipeline MUST be language-neutral. It MUST NOT branch on Rust, C, C++, Zig, Go, AssemblyScript, or any other source-language identifier. Source-language names MUST NOT affect optimization decisions.
+
+The launcher MUST NOT merge non-identical functions, writable data, mutable globals, allocator state, stack state, or initialization state. Semantically equivalent functions with different normalized WebAssembly structures MUST remain separate.
+
+## 8. Host imports and lifecycle
+
+Saga host APIs use these imports:
+
+### 8.1 `saga:assets`
+
+```text
+saga_asset_open(uri_ptr: i32, uri_len: i32) -> i32
+saga_asset_get_size(handle: i32) -> i32
+saga_asset_read(handle: i32, dest_ptr: i32, length: i32) -> i32
+saga_asset_close(handle: i32)
+```
+
+### 8.2 `saga:thread`
+
+```text
+saga_thread_spawn(entry_idx: i32, arg_ptr: i32) -> i32
+saga_thread_yield()
+```
+
+`entry_idx` identifies an entry in the final function table. The launcher MUST finalize the table before starting a worker.
+
+### 8.3 `saga:log`
+
+```text
+saga_log(level: i32, msg_ptr: i32, msg_len: i32)
+```
+
+`level` is `0` Trace, `1` Debug, `2` Info, `3` Warn, or `4` Error.
+
+### 8.4 `saga:time`
+
+```text
+saga_time_now() -> i64
+saga_time_elapsed() -> f64
+```
+
+### 8.5 `saga:storage`
+
+```text
+saga_save_list(out_buf: i32, max_len: i32) -> i32
+saga_save_read_meta(save_id_ptr: i32, save_id_len: i32, meta_buf: i32, max_len: i32) -> i32
+saga_save_read(save_id_ptr: i32, save_id_len: i32, dest_ptr: i32, max_len: i32) -> i32
+saga_save_write(save_id_ptr: i32, save_id_len: i32, data_ptr: i32, data_len: i32, meta_ptr: i32, meta_len: i32) -> i32
+saga_save_delete(save_id_ptr: i32, save_id_len: i32) -> i32
+```
+
+### 8.6 WebAssembly registration
+
+If a WebAssembly manifest has `entrypoint = "symbol"`, the final module MUST export `symbol` with signature:
+
+```text
+symbol() -> i32
+```
+
+The launcher MUST invoke each WebAssembly registration entrypoint exactly once, in dependency-first order, after linked initialization has completed. Registration MUST be non-blocking. A non-zero return code MUST abort launch.
+
+### 8.7 JavaScript registration
+
+A JavaScript module MUST export:
 
 ```javascript
-// Example module.js
-export const imports = {
-  com_company_mod_custom_log: (ptr, len) => {
-    // Read string from shared WASM linear memory
-  },
-};
-
-// Unique registration function exported to match manifest.toml
-export function com_company_mod_register(exports, memory, table) {
-  console.log("Mod registered!");
-}
+export const imports = {};
+export function <manifest entrypoint>(wasmExports, memory, table) {}
 ```
 
----
+The launcher MUST call the JavaScript registration function exactly once after WebAssembly instantiation. It MUST pass the final WebAssembly exports object, final memory, and final table.
 
-### 3.3 `assets/` Directory
+### 8.8 Engine launch
 
-Assets are accessed across mods using the Saga Asset Protocol (URI syntax):
-`saga://<mod-id>/<path-to-asset>`
+The root game module MUST export `saga_start() -> i32`. The launcher MUST invoke it exactly once after every registration function has returned `0`. `saga_start` MUST be non-blocking and MUST return `0` on success.
 
-- **Internal:** `saga://self/textures/grass.png` (resolves to current mod).
-- **Cross-Mod:** `saga://com.saga.official.core/audio/click.wav`.
+## 9. JavaScript and asset modules
 
----
+JavaScript modules run in the host JavaScript environment. They MAY call final WebAssembly exports, host APIs, and `fetch("saga://<mod-id>/<path>")` for assets.
 
-## 4. Pre-defined System Imports (Saga Standard Library)
+A JavaScript module MUST use the final instance's memory and table passed to its registration function. It MUST NOT assume that a peer has a separate instance, memory, or table.
 
-Saga provides host-level bindings under standardized `saga:*` namespaces.
+Pure-data mods MUST place files under `assets/`. The launcher MUST expose each asset at `saga://<mod-id>/<relative-path>`.
 
-### 4.1 Asset Management (`saga:assets`)
+## 10. Required launcher errors
 
-```rust
-extern "C" {
-    /// Requests an asset buffer handle from storage.
-    fn saga_asset_open(uri_ptr: *const u8, uri_len: usize) -> i32;
+The launcher MUST reject an active mod set when:
 
-    /// Queries byte length of an asset handle.
-    fn saga_asset_get_size(handle: i32) -> usize;
+- a manifest is invalid;
+- a dependency cannot be resolved;
+- a WebAssembly mod does not contain exactly one `module.a`;
+- a package contains a forbidden finalized `module.wasm`, `.o`, or `.rlib` artifact;
+- an archive is not a valid `ar` archive;
+- an archive member is not a valid relocatable WebAssembly object;
+- an archive member lacks required linking metadata;
+- a manifest export is missing or has the wrong type;
+- a required peer import has no compatible definition;
+- two incompatible strong definitions have the same symbol;
+- an unresolved non-host import remains after linking;
+- the final module has more than one memory or more than one table;
+- optimization removes or changes a required export;
+- the final module fails WebAssembly validation; or
+- a registration function returns a non-zero value.
 
-    /// Reads asset bytes into linear memory.
-    fn saga_asset_read(handle: i32, dest_ptr: *mut u8, length: usize) -> i32;
+## 11. License
 
-    /// Closes an asset handle.
-    fn saga_asset_close(handle: i32);
-}
-
-```
-
----
-
-### 4.2 Multithreading (`saga:thread`)
-
-```rust
-extern "C" {
-    /// Spawns a Web Worker executing a WASM table function pointer index.
-    fn saga_thread_spawn(entry_idx: usize, arg_ptr: usize) -> i32;
-
-    /// Yields execution on the current thread.
-    fn saga_thread_yield();
-}
-
-```
-
----
-
-### 4.3 Structured Logging (`saga:log`)
-
-Provides structured, engine-tagged logging output separated by level.
-
-```rust
-extern "C" {
-    /// Writes a log message to the host engine log.
-    ///
-    /// - level: 0 = Trace, 1 = Debug, 2 = Info, 3 = Warn, 4 = Error
-    fn saga_log(level: u32, msg_ptr: *const u8, msg_len: usize);
-}
-
-```
-
----
-
-### 4.4 Time (`saga:time`)
-
-Wall-clock and monotonic-time queries. The runtime does not own the per-frame loop, so frame deltas are not part of the standard library — mods compute their own `dt` from a local clock (`performance.now()` and friends).
-
-```rust
-extern "C" {
-    /// Wall-clock timestamp: milliseconds since the Unix epoch.
-    fn saga_time_now() -> u64;
-
-    /// Monotonic time elapsed since the Saga session started, in seconds.
-    fn saga_time_elapsed() -> f64;
-}
-
-```
-
----
-
-### 4.5 Save File System (`saga:storage`)
-
-`saga:storage` exposes a complete save file subsystem allowing mods to inspect, read, write, and delete save files and metadata records.
-
-```rust
-extern "C" {
-    /// Writes a JSON-formatted list of all available save files and metadata
-    /// into `out_buf`. Returns actual byte length written (or negative error code).
-    fn saga_save_list(out_buf: *mut u8, max_len: usize) -> i32;
-
-    /// Reads metadata JSON for a specific save identifier.
-    fn saga_save_read_meta(
-        save_id_ptr: *const u8, save_id_len: usize,
-        meta_buf: *mut u8, max_len: usize
-    ) -> i32;
-
-    /// Reads binary/text save payload into linear memory.
-    fn saga_save_read(
-        save_id_ptr: *const u8, save_id_len: usize,
-        dest_ptr: *mut u8, max_len: usize
-    ) -> i32;
-
-    /// Writes/overwrites a save payload and its metadata record.
-    fn saga_save_write(
-        save_id_ptr: *const u8, save_id_len: usize,
-        data_ptr: *const u8, data_len: usize,
-        meta_ptr: *const u8, meta_len: usize
-    ) -> i32;
-
-    /// Deletes a save file entry.
-    fn saga_save_delete(save_id_ptr: *const u8, save_id_len: usize) -> i32;
-}
-
-```
-
----
-
-## 5. Runtime Resolution & Loading Pipeline
-
-When Saga launches an instance, it executes the following load pipeline:
-
-```text
-   [ 1. Manifest Resolution & Dependency Graph Sort ]
-                           │
-                           ▼
-   [ 2. Binaryen Synthesis & Static Relocation Pass ]
-   Merges `.wasm` modules; rebases data/table segments
-                           │
-                           ▼
-   [ 3. WebAssembly Instantiation ]
-   Allocates SharedArrayBuffer & instantiates unified module
-                           │
-                           ▼
-   [ 4. Phase 1: Registration Pass (`entrypoint`) ]
-   Executes mod registration symbols in dependency-first order
-                           │
-                           ▼
-   [ 5. Phase 2: Engine Launch Pass (`saga_start`) ]
-   Launcher invokes root base game launch entrypoint
-
-```
-
-1. **Manifest Validation:** Reads `manifest.toml` files, resolves dependency trees, and establishes execution order.
-2. **Binaryen Synthesis & Relocation:** Combines all `.wasm` modules into a single `WebAssembly.Module`. Static data segment offsets (`__memory_base`) and indirect call indices (`__table_base`) are assigned non-overlapping memory regions.
-3. **JS Aggregation & Instantiation:** Merges JS `imports` objects and instantiates the merged WASM binary with unified `SharedArrayBuffer` memory and `WebAssembly.Table`.
-4. **Phase 1 (Registration Pass):** Invokes mod entrypoints declared in `manifest.toml` in dependency-first order to register content and function table hooks.
-5. **Phase 2 (Engine Launch Pass):** Invokes `saga_start()` on the base game to initiate the active game loop.
-
----
-
-## 6. Two-Phase Lifecycle & Entrypoint Contracts
-
-To prevent a base game or complex mod from blocking dependent mods during boot (e.g., entering a continuous loop during initialization), Saga enforces a **Two-Phase Boot Architecture**.
-
-```text
-                                 BOOT LIFECYCLE
-                                        │
-    ┌───────────────────────────────────┴───────────────────────────────────┐
-    │                                                                       │
-    ▼                                                                       ▼
-[ Phase 1: Registration ]                                  [ Phase 2: Engine Launch ]
-• Executed for ALL mods in dependency-first order          • Executed ONCE on root base game
-• MUST be non-blocking (setup, function table hooks)       • Starts `requestAnimationFrame` / workers
-• Function symbol specified in `manifest.toml`             • Standardized symbol name: `saga_start`
-
-```
-
----
-
-### 6.1 Phase 1: Registration Pass (`entrypoint`)
-
-- **Execution Order:** Dependency-first topological order (Base Game $\rightarrow$ Core Libraries $\rightarrow$ High-level Mods). A dependency's entrypoint is called **before** any mod that relies on it.
-- **Non-Blocking Rule:** Every `entrypoint` function must perform memory allocations, register callback function pointers into shared tables, hook game functions, and return immediately (`0`). **It must not enter a blocking game loop.**
-- **Symbol Naming:** The entrypoint symbol name is defined in `manifest.toml` (`entrypoint = "com_example_register"`). To avoid Binaryen merge collisions, entrypoint function names must be unique across all active mods.
-
-#### C-ABI Entrypoint Contract
-
-```rust
-// Exported C-ABI function matching `entrypoint` in manifest.toml
-#[no_mangle]
-pub extern "C" fn com_company_mod_register(
-    wasm_exports: *const c_void,
-    memory_handle: *const c_void,
-    table_handle: *const c_void
-) -> i32;
-
-```
-
-- **Parameters:**
-- `wasmExports`: Reference to the global export table.
-- `memory`: Pointer handle to the unified linear memory.
-- `table`: Pointer handle to the shared indirect function table.
-
-- **Return Code:** `0` indicates success; non-zero indicates registration failure.
-
----
-
-### 6.2 Phase 2: Engine Launch Pass (`saga_start`)
-
-Once the Saga Launcher confirms that **every active mod's registration entrypoint has returned `0**`, Phase 2 begins.
-
-- **Single Execution:** The launcher calls `saga_start()` **only once** on the primary base game module (`com.example.game.base-game` or equivalent root engine).
-- **Execution Contract:** `saga_start` initiates the primary game execution loop using non-blocking browser mechanics
-- **Symbol Contract:**
-
-```rust
-// Standardized single entrypoint symbol exported by the base game engine
-#[no_mangle]
-pub extern "C" fn saga_start() -> i32;
-
-```
-
----
-
-## 7. License
-
-This specification is dual-licensed under MIT or Apache-2.0.
+This specification is dual-licensed under MIT or Apache-2.0, at your option.

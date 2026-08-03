@@ -2,16 +2,17 @@ id      = "com.example.arena-ai"
 version = "1.0.0"
 
 name = "Arena AI"
-description = "C → WebAssembly mod that drives the AI opponent paddle. Reads the live ball state by accepting it as plain call arguments (no cross-mod static linking), predicts an intercept point, and smooth-slides the AI paddle toward it each frame. Demonstrates the saga:log and saga:thread host imports."
+description = "C → WebAssembly mod that drives the AI opponent paddle. Ships one relocatable module.a archive, imports the physics C ABI, and demonstrates direct peer calls plus saga:log and saga:thread host imports."
 
 entrypoint = "com_example_arena_ai_register"
-
-# The C → WebAssembly module owns a small fixed state plus a
-# per-call scratch buffer for the cooperative worker. 16 MiB of
-# linear memory is plenty of headroom; the loader rounds this up
-# to the nearest WASM page (64 KiB) when carving out the module's
-# cell of the unified linear memory.
-max_memory = "16 MiB"
+exports = [
+    "com_example_arena_ai_register",
+    "com_example_arena_ai_tick",
+    "com_example_arena_ai_direct_sample",
+    "com_example_arena_ai_get_ai_x",
+    "com_example_arena_ai_reset_ai",
+    "com_example_arena_ai_worker",
+]
 
 [dependencies]
 "com.example.arena-physics" = "^1.0.0"

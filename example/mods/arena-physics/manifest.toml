@@ -2,12 +2,25 @@ id      = "com.example.arena-physics"
 version = "1.0.0"
 
 name = "Arena Physics"
-description = "Rust → WebAssembly mod implementing the ball + player-paddle physics for the Saga example game. Compiled to module.wasm via example/build.sh. Exports a small set of cross-mod getters and setters so arena-ai (C) and arena-renderer (JS) can read and write state through the merged WASM exports instead of via raw linear-memory offsets."
+description = "Rust → WebAssembly mod implementing the ball + player-paddle physics for the Saga example game. Uses ordinary Rust std and ships one relocatable module.a archive. Exports a language-neutral cross-mod ABI."
 
 entrypoint = "com_example_arena_physics_register"
-
-# The Rust module owns only a small amount of state (ball + two
-# paddles + scores + rally counter); 16 MiB of linear memory leaves
-# comfortable headroom for the linear-memory allocator and any
-# future embedding sized up by the loader from `max_memory`.
-max_memory = "16 MiB"
+exports = [
+    "com_example_arena_physics_register",
+    "com_example_arena_physics_tick",
+    "com_example_arena_physics_get_ball_x",
+    "com_example_arena_physics_get_ball_y",
+    "com_example_arena_physics_get_ball_vx",
+    "com_example_arena_physics_get_ball_vy",
+    "com_example_arena_physics_get_ball_r",
+    "com_example_arena_physics_get_player_paddle_x",
+    "com_example_arena_physics_get_player_score",
+    "com_example_arena_physics_get_ai_paddle_x",
+    "com_example_arena_physics_get_ai_score",
+    "com_example_arena_physics_get_state",
+    "com_example_arena_physics_get_rally",
+    "com_example_arena_physics_set_input_dx",
+    "com_example_arena_physics_set_ai_x",
+    "com_example_arena_physics_set_state",
+    "com_example_arena_physics_serve",
+]

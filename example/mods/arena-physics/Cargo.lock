@@ -5,3 +5,11 @@ version = 4
 [[package]]
 name = "arena-physics"
 version = "0.0.0"
+dependencies = [
+ "saga-stdlib",
+]
+
+[[package]]
+name = "saga-stdlib"
+version = "0.1.0"
+source = "git+https://github.com/Gustavdrengen/saga-modding.git#b69792a6f8ae13c7d478bce88d6776fd87dfa1ee"

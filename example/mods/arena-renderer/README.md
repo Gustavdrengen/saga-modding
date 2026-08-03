@@ -12,7 +12,7 @@ launch pass.
 
 ## What each phase does
 
-- **Phase 1 (`register`)**: stash the merged WASM exports the engine
+- **Phase 1 (`register`)**: stash the final linked WASM exports the engine
   passed in, locate a canvas (or create one), install keyboard
   listeners, kick off an async palette fetch through the saga://
   asset scheme (`fetch("saga://com.example.arena-assets/palette.json")`).
